@@ -56,19 +56,16 @@ The current Foundation repo has a small root test surface:
 - `.agents/plugins/marketplace.json` and `plugins/`: local Codex plugin registry
   and plugin payloads.
 - `tests/test_foundation_integrity.py`: repo structure and doc contract checks.
-- `tests/test_contract_models.py`: Pydantic validation for YAML templates and
-  archived packet examples.
+- `tests/test_contract_models.py`: Pydantic validation for YAML templates.
 
 The repo still does not have active app code, product tests, deployment config,
-or a release target. Command lists copied from source material remain
-source/reference examples unless corresponding files exist in this repo or in a
-target project boundary.
+or a release target.
 
 ## Current Commands
 
 - `uv sync --frozen --group dev`: install locked test dependencies.
-- `make lint`: run `ruff`; archived and plugin payload roots are excluded from
-  the foundation lint scope.
+- `make lint`: run `ruff`; plugin payload roots are excluded from the foundation
+  lint scope.
 - `make typecheck`: run `mypy` with the Pydantic plugin enabled.
 - `make test`: run `pytest`.
 - `make check-contracts`: run Pydantic contract validation tests directly.
@@ -78,30 +75,14 @@ target project boundary.
 ## Current Contract And CD Checks
 
 Pydantic validation is used as a dev-only test mechanism. It validates that
-`templates/*.yaml` and `archive/packets/*.yaml` still match the expected
-contract shape, while `mypy` checks the model definitions and test code.
+`templates/*.yaml` still match the expected contract shape, while `mypy` checks
+the model definitions and test code.
 
 The current CD state is `not_applicable` because this repo has no deployment
 target, deployment workflow, or deployment config. The CD check is therefore a
 guard: it confirms that no active deployment config exists and that CI still
 runs the required local checks. If deployment files are introduced later, add a
 specific deploy smoke check and require human review before release.
-
-## Source Command Reference
-Copied source command model:
-- `make lint`: `uv run ruff check .`
-- `make typecheck`: `uv run mypy apps src tests`
-- `make test`: `uv run pytest`
-- `make check-architecture`: architecture dependency validation
-- `make check-doc-freshness`: markdown/frontmatter/link freshness validation
-- `make check-dangerous-diff`: safety-sensitive changed-file validation
-- `make check-harness-runtime`: runtime artifact and packet contract validation
-- `make check-repo-profiles`: repo profile contract validation
-- `make check-required`: source-defined required local chain
-
-Copied CI model: separate `ruff`, `mypy`, `pytest`, and `architecture-check`
-jobs after `uv sync --frozen --group dev`. These are historical and design
-reference unless matching files are present.
 
 ## Evaluation Layers
 Keep the layers separate:
@@ -114,7 +95,8 @@ Keep the layers separate:
   creation.
 - offline regression: replayable datasets from known failures or failing traces.
 
-CI, rubric, trace, and regression details remain reference, not active policy.
+CI, rubric, trace, and regression details remain supporting methods, not active
+policy.
 Rubric and trace signals should not replace normal CI or human review.
 
 ## PR Or Handoff Evidence
@@ -138,5 +120,5 @@ secrets or credential handling; auth; billing; database migrations or schema
 changes; deployment; CI/CD; GitHub Actions; infrastructure; public release;
 dependency changes; and security-sensitive behavior or protected data.
 
-AI review and rubric output are advisory. Source material keeps the merge gate
-as human review plus required CI pass.
+AI review and rubric output are advisory. The merge gate is human review plus
+required CI pass when a merge is planned.

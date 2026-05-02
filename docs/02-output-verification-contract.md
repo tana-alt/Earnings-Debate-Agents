@@ -46,5 +46,4 @@ release, dependency risk, or security-sensitive changes.
 
 ## Source Commands
 
-Old Makefile, CI, pytest, mypy, and app build commands in source docs are
-reference material unless the corresponding files exist in this repo.
+Only commands backed by current repo files are valid verification commands.

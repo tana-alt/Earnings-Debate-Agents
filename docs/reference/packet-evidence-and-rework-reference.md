@@ -26,7 +26,7 @@ Required field groups:
 Template `work_type` values: `implementation`, `research`, `planning`,
 `design`, `review`, `verification`, `release`, `docs`.
 Template `next_action` values: `complete`, `rework`, `review`, `continue`,
-`release`, `archive`.
+`release`.
 Valid output shape:
 - expected artifacts or changes
 - evidence refs
@@ -97,6 +97,4 @@ verification passes, the risky assumption is removed, or the work is abandoned
 with a recorded reason.
 ## Template Locations
 Use `templates/work-contract.yaml`, `templates/evidence-record.yaml`,
-`templates/verification-record.yaml`, `templates/rework-record.yaml`,
-`archive/packets/handoff-packet.yaml`, `archive/packets/evidence-packet.yaml`,
-and `archive/packets/rework-packet.yaml`.
+`templates/verification-record.yaml`, and `templates/rework-record.yaml`.

@@ -19,8 +19,8 @@ hierarchies with small work contracts.
 - Each task should name required source refs, expected output, and write target.
 - Read listed refs first.
 - Inspect nearby files only when needed for a safe local change.
-- Archives, unrelated logs, broad history, secrets, and speculative notes are
-  denied by default.
+- Unrelated logs, broad history, secrets, speculative notes, and past-source
+  material are denied by default.
 - If context expands, say why in the output.
 
 ## Work Contract

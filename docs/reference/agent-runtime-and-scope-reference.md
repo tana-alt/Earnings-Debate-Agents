@@ -21,9 +21,9 @@ Named source refs come first. Required context is the smallest set of refs
 needed to perform the work safely. Optional context may improve quality, but it
 is not a default reading surface.
 
-Denied-by-default context includes archive, broad logs, unrelated history,
-secret material, and broad runtime maps. Read it only when the task explicitly
-names it or a concrete blocker requires scoped expansion.
+Denied-by-default context includes broad logs, unrelated history, secret
+material, broad runtime maps, and past-source material. Read it only when the
+task explicitly names it or a concrete blocker requires scoped expansion.
 
 Context may expand when a named ref points to a required schema, template, or
 nearby implementation; verification requires nearby files; the contract cannot
@@ -40,9 +40,9 @@ Specialist workers receive scoped input docs named by the packet or handoff,
 output docs and write targets, local skill docs, packet templates named by the
 handoff, and compact lesson or runtime identity refs when explicitly provided.
 
-Specialists should not self-expand into broad maps, archive, root history, or
-unrelated project context. If their scoped context is insufficient, they emit
-rework or ask for a scoped handoff.
+Specialists should not self-expand into broad maps, root history, past-source
+material, or unrelated project context. If their scoped context is insufficient,
+they emit rework or ask for a scoped handoff.
 
 Workflow is output-to-input compatibility, not role hierarchy.
 
@@ -78,9 +78,6 @@ validity, input and output contract compatibility, registered output or
 write-target boundaries, or runtime preflight, postflight, session, rate-limit,
 and secret checks.
 
-Treat legacy runtime wording as compatibility history when it conflicts with
-the active Foundation direction.
-
 Cron and scheduled work use the same scoped contract concept as human work.
 
 A scheduled request should name target skill, task intent, runtime identity or
@@ -90,7 +87,6 @@ evidence requirements.
 If a scheduled request is ambiguous or missing required refs, route it to the
 main lane or emit rework instead of widening context automatically.
 
-Do not promote old SNS/channel/project_supervisor details into the current
-active Foundation structure. Older source docs may contain useful runtime
-principles, but their domain-specific examples are historical source material
-unless an active work contract explicitly names them.
+Do not promote outside project roles, channels, or runtime maps into the current
+active Foundation structure unless an active work contract explicitly names
+them.

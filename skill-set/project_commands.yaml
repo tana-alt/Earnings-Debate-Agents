@@ -1,0 +1,17 @@
+# Project command registry for Codex skills.
+# Keep this file short and update it when the repo standardizes commands.
+
+package_manager: "pnpm"  # npm | pnpm | yarn | bun | uv | other
+
+commands:
+  install: "pnpm install"
+  typecheck: "pnpm typecheck"
+  lint: "pnpm lint"
+  unit_test: "pnpm test"
+  e2e_test: "pnpm exec playwright test"
+  build: "pnpm build"
+  security_audit: "pnpm audit"
+
+notes:
+  - "Replace placeholder commands with actual repo commands."
+  - "Skills should prefer these commands over guessing."

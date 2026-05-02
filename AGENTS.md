@@ -6,7 +6,8 @@ necessary.
 ## Mindset
 - Keep it simple. Don't create anything you can't explain the reasoning behind.
 - Don't rely solely on inference. Build your results on observation and facts.
-- Make plan and set success criteria and constraints before creating deliverables.
+- Break down the problem into its smallest components. Make plan and set success criteria and constraints before creating deliverables.
+- Everything in this repo is not to minimize effort but to maximize the quality of the output.
 
 ## Read Order
 
@@ -23,7 +24,6 @@ Open `docs/reference/` only when the task needs detail.
 2. `docs/reference/packet-evidence-and-rework-reference.md`
 3. `docs/reference/repo-boundary-and-storage-reference.md`
 4. `docs/reference/verification-ci-and-pr-reference.md`
-5. `docs/reference/legacy-source-and-archive-map.md`
 
 ## Behavior
 
@@ -35,7 +35,7 @@ Open `docs/reference/` only when the task needs detail.
 - If required context is missing or verification fails, return rework instead of
   guessing.
 - You should understand the structure of this repo.
-- Archive old or superseded files after useful content is summarized.
+- Keep past-source material out of the current repo truth.
 
 ## Folder Map
 
@@ -44,8 +44,11 @@ Open `docs/reference/` only when the task needs detail.
 - `docs/`: active docs and compact references.
 - `docs/reference/`: detailed reference summaries.
 - `artifact/`: foundation repo outputs or fixtures, not project logs.
-- `archive/`: summarized old or superseded material.
 - `templates/`: reusable templates.
-- `.agents/plugins/marketplace.json`: local Codex plugin registry only.
+- `tests/`: foundation contract and integrity checks.
+- `.agents/skills/`: current repo-local Codex skills.
+- `.agents/plugins/marketplace.json`: local Codex plugin registry.
 - `plugins/`: local plugin bundles and downloaded plugin payloads.
+- `.github/workflows/ci.yml`: CI entrypoint for required checks.
+- `Makefile`, `pyproject.toml`, `uv.lock`: local verification tooling.
 - `Plan/`: planning and shared logs.

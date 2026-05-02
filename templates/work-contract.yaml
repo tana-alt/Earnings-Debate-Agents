@@ -27,7 +27,7 @@ boundaries:
   allowed_write_targets:
     - path/
   denied_context:
-    - archive
+    - past_source_material
     - secrets
     - unrelated_project_logs
   risk_flags: []
@@ -50,4 +50,4 @@ evidence_and_verification:
 continuation:
   blockers: []
   open_questions: []
-  next_action: "complete | rework | review | continue | release | archive"
+  next_action: "complete | rework | review | continue | release"

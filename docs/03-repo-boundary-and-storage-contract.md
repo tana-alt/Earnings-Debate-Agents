@@ -3,8 +3,7 @@
 ## Active Surface
 
 Routine agents read `AGENTS.md` and the three active docs in `docs/`. Detailed
-or historical material lives in `docs/reference/`, `archive/source-docs/`, or
-`archive/`.
+current material lives in `docs/reference/`.
 
 ## Folder Rules
 
@@ -13,14 +12,24 @@ or historical material lives in `docs/reference/`, `archive/source-docs/`, or
 - `docs/`: active docs and reference summaries.
 - `artifact/`: foundation repo outputs, fixtures, or generated records.
 - `templates/`: reusable templates only.
-- `archive/`: summarized old material.
-- `.agents/plugins/marketplace.json`: Codex plugin registry only.
+- `tests/`: foundation contract and integrity checks only.
+- `.agents/skills/`: current repo-local Codex skills.
+- `.agents/plugins/marketplace.json`: Codex plugin registry.
 - `plugins/`: local plugin bundles and downloaded plugin payloads.
+- `.github/workflows/ci.yml`: CI entrypoint for required checks.
+- `Makefile`, `pyproject.toml`, `uv.lock`: local verification tooling.
 
-Do not treat legacy `apps/`, `artifacts/`, `projects/`, or `tests/` references
-as current roots unless those folders are deliberately introduced.
+The current `tests/` root is deliberately introduced for this foundation repo's
+verification checks. Do not treat `apps/`, `artifacts/`, `projects/`, or
+product-test references as current roots unless those folders are deliberately
+introduced.
 
-Do not restore legacy `.agents` surfaces except the plugin marketplace registry.
+Do not restore old `.agents` surfaces outside current skills and plugin
+marketplace registry.
+Do not commit local Serena runtime state; `.serena/` is ignored local tool state,
+not project truth.
+Do not commit past-source archives; `archive/` is ignored local material, not
+project truth.
 
 ## Storage And Overlays
 
@@ -36,7 +45,7 @@ must not embed raw content bodies or credentials.
 Secrets, tokens, cookies, browser sessions, API keys, and private credentials
 must not be written into prompts, packets, logs, metadata, or repo files.
 
-## Archive Rule
+## Past-Source Rule
 
-Summarize useful content into active docs or references before archiving old
-docs. After summary, old source material should not remain routine context.
+Distill useful past-source content into active docs or current references before
+using it. Past-source copies should stay outside tracked repo truth.

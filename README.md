@@ -2,7 +2,7 @@
 
 This repo distills a small development foundation for agents, humans, tools,
 and automations. Keep it simple: active behavior belongs in three short docs,
-and detailed source material belongs in references or archive.
+and detailed source material belongs in current references only.
 
 ## Active Docs
 
@@ -10,12 +10,12 @@ and detailed source material belongs in references or archive.
 - `docs/01-agent-operating-contract.md`: context, contracts, and rework.
 - `docs/02-output-verification-contract.md`: evidence, verification, and gates.
 - `docs/03-repo-boundary-and-storage-contract.md`: folders, storage, packets,
-  archive, and secrets.
+  and secrets.
 
 ## References
 
-Detailed summaries live under `docs/reference/`. Older docs and copied source
-material are kept under `archive/`; they are not routine agent context.
+Detailed summaries live under `docs/reference/`. Past-source material is kept
+out of the tracked repo unless it has been distilled into current docs.
 
 ## Verification
 
@@ -35,4 +35,7 @@ CI runs the same required checks through `.github/workflows/ci.yml`.
 - `docs/`: active docs and references.
 - `artifact/`: foundation outputs and fixtures.
 - `templates/`: reusable templates.
-- `archive/`: summarized old material.
+- `tests/`: foundation contract and integrity checks.
+- `.agents/skills/`: current repo-local Codex skills.
+- `.agents/plugins/marketplace.json` and `plugins/`: local plugin registry and
+  payloads.
