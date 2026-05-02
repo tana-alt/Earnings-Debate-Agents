@@ -22,6 +22,12 @@ TEMPLATES = (
     "templates/verification-record.yaml",
     "templates/rework-record.yaml",
     "templates/project-storage-map.yaml",
+    "templates/serena-project.yml",
+    "templates/codex-config.toml.example",
+)
+
+RESTORE_SCRIPTS = (
+    "scripts/setup-agent-environment.sh",
 )
 
 DEPLOYMENT_CONFIGS = (
@@ -68,7 +74,7 @@ def test_reference_set_is_exactly_four_files() -> None:
 
 
 def test_required_contract_files_exist() -> None:
-    required = (*ACTIVE_DOCS, *REFERENCE_DOCS, *TEMPLATES)
+    required = (*ACTIVE_DOCS, *REFERENCE_DOCS, *TEMPLATES, *RESTORE_SCRIPTS)
 
     for relative_path in required:
         assert repo_path(relative_path).is_file(), relative_path
@@ -91,6 +97,20 @@ def test_removed_runtime_surfaces_are_not_current_roots() -> None:
     gitignore = read_text(".gitignore")
     assert "archive/" in gitignore
     assert ".serena/" in gitignore
+
+
+def test_agent_environment_restore_uses_templates_not_runtime_state() -> None:
+    readme = read_text("README.md")
+    setup_script = read_text("scripts/setup-agent-environment.sh")
+    codex_template = read_text("templates/codex-config.toml.example")
+
+    assert "scripts/setup-agent-environment.sh" in readme
+    assert "templates/serena-project.yml" in setup_script
+    assert "templates/codex-config.toml.example" in setup_script
+    assert ".serena/project.yml" in setup_script
+    assert "web_dashboard_open_on_launch" in setup_script
+    assert "@upstash/context7-mcp" in codex_template
+    assert "auth.json" not in codex_template
 
 
 def test_skill_roots_are_explicit() -> None:

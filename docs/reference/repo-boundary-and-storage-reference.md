@@ -19,7 +19,9 @@ Use the current folder map and store truth locally.
 - `artifact/`: repo-local generated artifacts, fixtures, or machine-readable
   outputs for this foundation repo. Do not use it as a project log bucket.
 - `templates/`: reusable work, evidence, verification, rework, and storage
-  templates.
+  templates, plus sanitized local agent environment templates.
+- `scripts/`: repo bootstrap and verification helpers. These may create ignored
+  local tool state, but must not embed credentials or machine logs.
 - `tests/`: foundation contract and integrity checks for active docs, references,
   templates, and deployment-readiness guards.
 - `.agents/skills/`: current repo-local Codex skills.

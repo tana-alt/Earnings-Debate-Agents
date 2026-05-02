@@ -45,6 +45,7 @@ Open `docs/reference/` only when the task needs detail.
 - `docs/reference/`: detailed reference summaries.
 - `artifact/`: foundation repo outputs or fixtures, not project logs.
 - `templates/`: reusable templates.
+- `scripts/`: repo bootstrap and verification helpers.
 - `tests/`: foundation contract and integrity checks.
 - `.agents/skills/`: current repo-local Codex skills.
 - `.codex/skills/`: preserved existing Codex skills; consult before changing.

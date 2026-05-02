@@ -12,6 +12,7 @@ current material lives in `docs/reference/`.
 - `docs/`: active docs and reference summaries.
 - `artifact/`: foundation repo outputs, fixtures, or generated records.
 - `templates/`: reusable templates only.
+- `scripts/`: repo bootstrap and verification helpers only.
 - `tests/`: foundation contract and integrity checks only.
 - `.agents/skills/`: current repo-local Codex skills.
 - `.codex/skills/`: preserved existing Codex skills; consult before changing.
@@ -31,6 +32,8 @@ Do not commit local Serena runtime state; `.serena/` is ignored local tool state
 not project truth.
 Do not commit past-source archives; `archive/` is ignored local material, not
 project truth.
+Commit sanitized environment templates and restore scripts instead of local tool
+state, credentials, logs, caches, or downloaded payloads.
 
 ## Storage And Overlays
 
