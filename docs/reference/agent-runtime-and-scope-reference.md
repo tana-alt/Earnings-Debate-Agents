@@ -1,48 +1,74 @@
 ---
-status: draft
+status: reference
 owner: foundation
 source_of_truth_level: reference
-created_at: 2026-05-02
+created_at: 2026-05-06
 ---
 
 # Agent Runtime And Scope Reference
 
-This reference summarizes runtime, scope, invocation, and dependency-map rules.
-It is reference material, not routine context for every worker.
+Use this reference only when resolving scope, invocation boundaries, handoff,
+parallel lanes, or external runtime input.
 
-Routine agents start from the user request, named source refs, and nearest
-relevant files. They do not begin by reading broad runtime maps or the repo.
+## Scope Model
 
-A bounded work contract names task intent, `source_refs`, expected outputs,
-allowed write targets, evidence and verification requirements, and the blocker
-or rework path.
+Workers start from the user request, handoff, task packet, selected skill, or
+provided scope. They do not begin by reading the repo, broad runtime maps, or
+unrelated history.
 
-Named source refs come first. Required context is the smallest set of refs
-needed to perform the work safely. Optional context may improve quality, but it
-is not a default reading surface.
+A useful scope may include:
 
-Denied-by-default context includes broad logs, unrelated history, secret
-material, broad runtime maps, and past-source material. Read it only when the
-task explicitly names it or a concrete blocker requires scoped expansion.
+- `task_intent`
+- `success_criteria`
+- `source_refs`
+- `optional_refs`
+- `expected_outputs`
+- `allowed_write_targets`
+- `denied_context`
+- `evidence_required`
+- `verification_required`
+- `git_scope` or branch/worktree target when parallel write work is involved
+- `blockers`
+- `open_questions`
+- `next_action`
 
-Context may expand when a named ref points to a required schema, template, or
-nearby implementation; verification requires nearby files; the contract cannot
-be satisfied without a missing source ref; or a security, compliance, or
-data-sensitivity concern appears.
+Required context is the smallest set of refs needed to perform the work safely.
+Optional context may improve quality, but it is not default reading material.
 
-Missing context becomes a focused question or rework record. Workers must not
-invent facts, requirements, strategy, state, paths, or implementation details.
+## Context Expansion
 
-The main lane or scheduler may read routing maps when resolving work shape,
-target skill, dependency edges, call validity, or contract drift.
+Expand context only when:
 
-Specialist workers receive scoped input docs named by the packet or handoff,
-output docs and write targets, local skill docs, packet templates named by the
-handoff, and compact lesson or runtime identity refs when explicitly provided.
+- a named ref points to a required schema, template, or nearby implementation;
+- verification requires a nearby file or command source;
+- the contract cannot be satisfied without a missing source ref;
+- security, compliance, privacy, or data sensitivity requires review.
 
-Specialists should not self-expand into broad maps, root history, past-source
-material, or unrelated project context. If their scoped context is insufficient,
-they emit rework or ask for a scoped handoff.
+When context expands, record why. If context is still insufficient, return
+rework or ask for the smallest scoped repair.
+
+## Runtime And Scheduler Boundary
+
+Scope may be supplied by a human, handoff, runtime, scheduler, monitor signal,
+or selected skill. This foundation repo does not define a scheduler, runtime
+queue, lock system, or plan ledger unless a current repo file explicitly adds
+one.
+
+If an external runtime or scheduler supplies scope, workers still follow the
+same active contracts: bounded inputs, allowed write targets, evidence,
+verification, storage boundaries, and human gates.
+
+## Retry And Atomic Output
+
+Retries must be idempotent or explicitly scoped. A retry must not duplicate
+records, repeat irreversible side effects, or overwrite changed work without a
+fresh source ref or conflict policy.
+
+Generated artifacts should use a safe write pattern when practical: produce
+temporary output, validate it, then replace the target or emit an artifact ref.
+Do not leave partial generated output as project truth.
+
+## Handoff Compatibility
 
 Workflow is output-to-input compatibility, not role hierarchy.
 
@@ -52,41 +78,14 @@ prior output artifact
   -> next bounded work unit
 ```
 
-Each output should carry artifact or packet refs, changed paths, evidence refs,
-verification results, blockers or open questions, and `next_owner` or terminal
-status. If the prior output does not satisfy the next input contract, the next
-step is rework or scoped clarification.
+A handoff should carry source refs, artifact refs, evidence refs, verification
+refs, blockers or open questions, and `next_action`. If the prior output does
+not satisfy the next input contract, the next step is rework or scoped
+clarification.
 
-Agent calls have three layers:
+## Worker Limits
 
-- trigger source: human request, scheduled job, monitor signal, handoff, or
-  rework packet
-- call decider: main lane for human, ambiguous, monitor, handoff, or rework
-  routing; registered scheduler for pre-registered scheduled work
-- actual invoker: runtime
-
-Specialists request the next owner by emitting a packet, handoff, rework,
-operation record, or `next_owner` field. They do not directly spawn broad agent
-work.
-
-Runtime validates the resolved call, starts the target skill scope, injects the
-scoped request, records activity, and enforces preflight and postflight checks.
-Runtime is not a strategy owner and must not inject whole-repo context.
-
-Use runtime maps when resolving source-ref scope, target skill or call request
-validity, input and output contract compatibility, registered output or
-write-target boundaries, or runtime preflight, postflight, session, rate-limit,
-and secret checks.
-
-Cron and scheduled work use the same scoped contract concept as human work.
-
-A scheduled request should name target skill, task intent, runtime identity or
-project refs, source refs, expected outputs, write targets, and verification or
-evidence requirements.
-
-If a scheduled request is ambiguous or missing required refs, route it to the
-main lane or emit rework instead of widening context automatically.
-
-Do not promote outside project roles, channels, or runtime maps into the current
-active Foundation structure unless an active work contract explicitly names
-them.
+Specialist workers receive scoped input docs, output targets, local skill docs,
+templates named by the handoff, and identity or runtime refs only when provided.
+They do not self-expand into broad maps, root history, past-source material, or
+unrelated project context.

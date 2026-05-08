@@ -1,56 +1,45 @@
 # AGENTS.md
 
-This is the first file agents read. Keep this repo simple, sufficient, and
-necessary.
+This is the agent entrypoint and routing map. Keep it compact.
 
-## Mindset
-- Keep it simple. Don't create anything you can't explain the reasoning behind.
-- Don't rely solely on inference. Build your results on observation and facts.
-- Break down the problem into its smallest components. Make plan and set success criteria and constraints before creating deliverables.
-- Everything in this repo is not to minimize effort but to maximize the quality of the output.
+## Always Read
 
-## Read Order
+1. This file.
+2. The current user request, task packet, or scope.
+3. Named `source_refs`.
 
-Routine agents read only these active docs:
+Do not read the whole repo, all references, all skills, broad logs, archives,
+or unrelated history by default.
 
-1. `docs/01-agent-operating-contract.md`
-2. `docs/02-output-verification-contract.md`
-3. `docs/03-repo-boundary-and-storage-contract.md`
+## Open By Need
 
-Open `docs/reference/` only when the task needs detail.
+- Scope, writes, side effects, or parallel write work:
+  `docs/01-agent-operating-contract.md`
+- Output, verification, PR evidence, or handoff:
+  `docs/02-output-verification-contract.md`
+- Repo paths, storage, secrets, skills, or plugins:
+  `docs/03-repo-boundary-and-storage-contract.md`
 
 ## Reference Map
-1. `docs/reference/agent-runtime-and-scope-reference.md`
-2. `docs/reference/packet-evidence-and-rework-reference.md`
-3. `docs/reference/repo-boundary-and-storage-reference.md`
-4. `docs/reference/verification-ci-and-pr-reference.md`
 
-## Behavior
+- Runtime and scope detail:
+  `docs/reference/agent-runtime-and-scope-reference.md`
+- Packets, evidence, verification records, and rework:
+  `docs/reference/packet-evidence-and-rework-reference.md`
+- Repo folder map and storage detail:
+  `docs/reference/repo-boundary-and-storage-reference.md`
+- Current verification, CI, CD, and PR detail:
+  `docs/reference/verification-ci-and-pr-reference.md`
+- Git branch and worktree isolation:
+  `docs/reference/git-worktree-and-branch-reference.md`
+- Migration note and acceptance checklist:
+  `docs/reference/migration-and-acceptance-reference.md`
 
-- Read named source refs first; do not read the whole repo by default.
-- Understand task intent, expected output, write target, and verification before
-  editing.
-- Keep changes small and local.
-- Do not invent missing facts, paths, state, roles, or requirements.
-- If required context is missing or verification fails, return rework instead of
-  guessing.
-- You should understand the structure of this repo.
-- Keep past-source material out of the current repo truth.
+## Hard Rules
 
-## Folder Map
-
-- `app/`: future runnable app surfaces only.
-- `src/`: future shared implementation code only.
-- `docs/`: active docs and compact references.
-- `docs/reference/`: detailed reference summaries.
-- `artifact/`: foundation repo outputs or fixtures, not project logs.
-- `templates/`: reusable templates.
-- `scripts/`: repo bootstrap and verification helpers.
-- `tests/`: foundation contract and integrity checks.
-- `.agents/skills/`: current repo-local Codex skills.
-- `.codex/skills/`: preserved existing Codex skills; consult before changing.
-- `.agents/plugins/marketplace.json`: local Codex plugin registry.
-- `plugins/`: local plugin bundles and downloaded plugin payloads.
-- `.github/workflows/ci.yml`: CI entrypoint for required checks.
-- `Makefile`, `pyproject.toml`, `uv.lock`: local verification tooling.
-- `Plan/`: planning and shared logs.
+- Start from provided scope and named refs.
+- Do not edit without allowed write targets, current file inspection, relevant
+  VCS status, and conflict awareness.
+- For parallel write work, use one branch and one worktree per agent.
+- Skills provide methods and examples; they do not override active contracts.
+- Missing scope, permission, evidence, or verification means rework.

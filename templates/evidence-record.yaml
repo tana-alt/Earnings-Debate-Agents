@@ -10,10 +10,29 @@ identity:
 
 sources:
   source_refs:
-    - path/or/url
+    - path: "docs/02-output-verification-contract.md"
   commands: []
   screenshots: []
   external_refs: []
+
+change:
+  changed_paths: []
+  artifact_refs:
+    - "artifact/example-output.md"
+
+verification_summary:
+  attempted:
+    - name: "foundation robustness gate"
+      command: "make check-foundation"
+      result: passed
+  result: passed
+  unverified_surfaces:
+    - "none"
+
+human_gate:
+  required: false
+  status: not_applicable
+  reason: "template example"
 
 observations:
   facts:
@@ -26,5 +45,6 @@ observations:
 limits:
   missing_evidence: []
   stale_refs: []
-  confidence: low | medium | high
-  residual_risk: []
+  confidence: low
+  residual_risk:
+    - "none"

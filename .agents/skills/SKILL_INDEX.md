@@ -21,6 +21,17 @@ This index is for humans. Codex discovers skills from each skill's YAML front ma
 - `deploy-readiness`
 - `design-system-audit`
 
+## UI and imported skills
+
+- `frontend-design`
+- `img-to-frontend`
+- `skill-integrity-tuning-refactor`
+- `ui-anthropic-frontend-design`
+- `ui-openai-figma-implement-design`
+- `ui-openai-frontend-design`
+- `ui-vercel-react-best-practices`
+- `ui-vercel-web-design-guidelines`
+
 ## Policy
 
 - Treat skills as a discovery layer plus a compact execution contract.

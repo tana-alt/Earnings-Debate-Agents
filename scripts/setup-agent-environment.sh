@@ -1,7 +1,8 @@
 #!/usr/bin/env sh
 set -eu
+CDPATH=
 
-ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+ROOT="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 SERENA_TEMPLATE="$ROOT/templates/serena-project.yml"
 CODEX_TEMPLATE="$ROOT/templates/codex-config.toml.example"
 SERENA_PROJECT="$ROOT/.serena/project.yml"
@@ -11,6 +12,19 @@ CODEX_CONFIG="$HOME/.codex/config.toml"
 FORCE="${FORCE:-0}"
 
 mkdir -p "$ROOT/.serena" "$HOME/.codex"
+
+if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  git -C "$ROOT" config core.hooksPath hooks
+  if [ "$FORCE" = "1" ] || ! git -C "$ROOT" config --get foundation.canonicalRoot >/dev/null 2>&1; then
+    git -C "$ROOT" config foundation.canonicalRoot "$ROOT"
+    echo "configured foundation.canonicalRoot=$ROOT"
+  else
+    echo "kept existing foundation.canonicalRoot"
+  fi
+  echo "configured git hooks path: hooks"
+else
+  echo "not a git worktree; skipped git hook configuration"
+fi
 
 if [ "$FORCE" = "1" ] || [ ! -f "$SERENA_PROJECT" ]; then
   cp "$SERENA_TEMPLATE" "$SERENA_PROJECT"

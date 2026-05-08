@@ -26,6 +26,14 @@ inputs:
 boundaries:
   allowed_write_targets:
     - path/
+  git_scope:
+    mode: parallel
+    base_ref: origin/main
+    merge_target: origin/main
+    branch_target: agent/example_work_id/example_lane/example_slug
+    worktree_target: ../worktrees/foundation-development/example_work_id-example_lane
+    sibling_branch_refs: []
+    conflict_policy: no_overlap
   denied_context:
     - past_source_material
     - secrets

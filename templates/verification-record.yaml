@@ -9,17 +9,28 @@ identity:
   created_at: "YYYY-MM-DD"
 
 checks:
+  - name: "foundation robustness gate"
+    command: "make check-foundation"
+    result: passed
+    evidence_ref: "artifact/example-evidence.md"
+    notes: "Required local chain plus CD readiness guard."
   - name: "lint"
-    command: ""
-    result: passed | failed | blocked | skipped | not_applicable
-    evidence_ref: ""
-    notes: ""
+    command: "make lint"
+    result: skipped
+    evidence_ref: "none"
+    notes: "Skipped in this template example; record the reason when skipped."
   - name: "test"
-    command: ""
-    result: passed | failed | blocked | skipped | not_applicable
-    evidence_ref: ""
-    notes: ""
+    command: "make test"
+    result: skipped
+    evidence_ref: "none"
+    notes: "Skipped in this template example; record the reason when skipped."
 
-unverified_surfaces: []
-residual_risk: []
-next_action: complete | rework | review | continue
+unverified_surfaces:
+  - "none"
+residual_risk:
+  - "none"
+human_gate:
+  required: false
+  status: not_applicable
+  reason: "template example"
+next_action: complete

@@ -6,3 +6,5 @@ __pycache__/
 .DS_Store
 .serena/
 archive/
+agent_docs_rebuild_scope_ref/
+Foundation-development/

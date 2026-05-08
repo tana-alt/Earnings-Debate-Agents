@@ -2,56 +2,67 @@
 
 ## Purpose
 
-This doc defines how any worker acts in this repo. It replaces broad role
-hierarchies with small work contracts.
+This doc defines how workers act in this repo. It replaces broad role hierarchy
+with small, bounded work contracts.
 
-## Principles
+## Scope First
 
-- Keep the repo simple, sufficient, and necessary.
-- Start from observed source refs, not memory.
-- Use contracts instead of roles to define work.
-- Let artifact compatibility decide the next step.
-- Keep evidence, blockers, verification, and next action visible.
-- Prefer small rework over broad restart.
+A worker starts from the user request, task packet, provided scope, and named
+`source_refs`. Scope is not discovered by reading the whole repo.
+
+Useful scope may include task intent, success criteria, source refs, optional
+refs, expected outputs, allowed write targets, denied context, evidence
+required, verification required, `git_scope` when writing in parallel,
+blockers, open questions, and next action.
+
+Do not invent missing facts, paths, requirements, state, roles, or ownership.
 
 ## Context Boundary
 
-- Each task should name required source refs, expected output, and write target.
-- Read listed refs first.
+- Read named refs first.
 - Inspect nearby files only when needed for a safe local change.
-- Unrelated logs, broad history, secrets, speculative notes, and past-source
-  material are denied by default.
+- Deny unrelated logs, broad history, archives, runtime state, secret material,
+  and past-source material by default.
 - If context expands, say why in the output.
 
-## Work Contract
+## Write Preconditions
 
-A valid work unit states:
+Before any local write, confirm:
 
-- task intent
-- source refs
-- expected outputs
 - allowed write targets
-- evidence required
-- verification required
-- blockers or open questions
-- next action
+- current contents of files to be edited
+- canonical repo root and relevant VCS status
+- conflict risk for the task scope
 
-Valid output includes changed paths, artifact refs, evidence refs, verification
-result, residual risk, and next action.
+For parallel write work, also confirm a complete `git_scope`: `base_ref`,
+`merge_target`, allowed write targets, conflict policy, and either explicit or
+derivable branch and worktree targets. If the scope cannot provide or derive
+these fields, return rework instead of inventing branch ownership.
 
-## Rework
+Installed hooks block commits and pushes from the canonical root or
+non-`agent/*` branches. They are guardrails, not full filesystem monitors. Do
+not bypass hooks for agent work; return rework if the hook policy conflicts
+with the task scope.
 
-Return rework when context is missing, instructions are ambiguous, output shape
-cannot be satisfied, verification fails, evidence is insufficient, or the
-request conflicts with project truth.
+## Side Effects
 
-Rework should name the blocker, cite the source or failed check, and request the
-smallest repair.
+Classify work before acting: read-only local, local write, external read,
+external write, infra/deploy, secret-bearing, or irreversible/protected.
 
-## Coding Posture
+External writes, dependency changes, CI/CD changes, deployment, release, secret
+handling, auth, billing, database migration, infrastructure, and
+security-sensitive work require explicit approval or human gate.
 
-- Follow existing boundaries and naming.
-- Keep unrelated diffs out.
-- Fix schemas or contracts before implementation when they are the source of
-  behavior.
-- Use external docs only when current external behavior matters.
+When side effects occur, record the tool or command, target surface, permission
+or gate status, input refs, output or artifact refs, and verification or
+rollback note. The canonical human-gate list lives in
+`docs/02-output-verification-contract.md`.
+
+## Valid Output
+
+A valid output follows `docs/02-output-verification-contract.md` and states
+changed paths or artifact refs, evidence refs, verification result, unverified
+surfaces, residual risk, and next action.
+
+Return rework when scope, permission, evidence, output shape, or verification is
+missing, unsafe, ambiguous, or in conflict with repo truth.

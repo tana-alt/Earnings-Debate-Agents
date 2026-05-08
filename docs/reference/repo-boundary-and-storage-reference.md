@@ -1,72 +1,100 @@
 ---
-status: draft
+status: reference
 owner: foundation
 source_of_truth_level: reference
-created_at: 2026-05-02
+created_at: 2026-05-06
 ---
 
 # Repo Boundary And Storage Reference
 
-Use the current folder map and store truth locally.
+Use this reference for repo layout, storage boundaries, ignored local state,
+skills, plugins, and overlays.
 
 ## Current Folder Map
 
-- `app/`: future runnable app surfaces only. Keep empty unless truly needed.
-- `src/`: future shared implementation code only. Do not store notes, logs, or
-  project records here.
-- `docs/`: active agent-facing docs and compact references.
-- `docs/reference/`: compact current references.
-- `artifact/`: repo-local generated artifacts, fixtures, or machine-readable
-  outputs for this foundation repo. Do not use it as a project log bucket.
-- `templates/`: reusable work, evidence, verification, rework, and storage
-  templates, plus sanitized local agent environment templates.
-- `scripts/`: repo bootstrap and verification helpers. These may create ignored
-  local tool state, but must not embed credentials or machine logs.
-- `tests/`: foundation contract and integrity checks for active docs, references,
-  templates, and deployment-readiness guards.
-- `.agents/skills/`: current repo-local Codex skills.
-- `.codex/skills/`: preserved existing Codex skills.
-- `.agents/plugins/marketplace.json`: local Codex plugin marketplace registry.
-- `plugins/`: local plugin bundles and downloaded plugin payloads.
+- `AGENTS.md`: thin agent entrypoint and routing document.
+- `docs/`: compact active agent contracts.
+- `docs/reference/`: detailed reference material opened only when needed.
+- `README.md`: human-facing overview and restore instructions.
+- `templates/`: reusable contract, evidence, verification, rework, storage, and
+  local environment templates.
+- `scripts/setup-agent-environment.sh`: local agent environment restore script.
+- `scripts/check-dev-environment.sh`: read-only local environment inspection.
+- `scripts/check-repo-hygiene.sh`: tracked-file and metadata hygiene check.
+- `hooks/`: tracked Git hooks installed by the restore script.
+- `tests/`: integrity, contract, and readiness checks.
+- `pyproject.toml`, `uv.lock`, `Makefile`: local verification tooling.
+- `.python-version`, `.editorconfig`, `.gitattributes`: lightweight local
+  development defaults.
 - `.github/workflows/ci.yml`: CI entrypoint for required checks.
-- `Makefile`, `pyproject.toml`, `uv.lock`: local verification tooling.
-Do not create `apps/`, `artifacts/`, `projects/`, or product-test roots unless a
-current task deliberately introduces them.
+- `.agents/skills/`: current repo-local skills.
+- `.agents/plugins/marketplace.json`: local plugin registry.
+- `plugins/`: local plugin bundles and downloaded plugin payloads.
+- `Plan/`: optional scoped planning notes for substantial or resumable work,
+  not a runtime queue or lock ledger.
+- `app/`: reserved runnable app surface; keep empty unless truly needed.
+- `src/`: reserved shared implementation surface; do not store notes or logs.
+- `artifact/`: foundation repo outputs or fixtures, not a broad project log.
+
+Do not introduce default roots such as runtime queues, active plan files, lock
+ledgers, dashboards, `projects/`, plural `apps/`, or plural `artifacts/`.
+Existing `Plan/` notes are scoped planning material only. New durable storage
+requires explicit ownership, retention, verification, and cleanup rules.
 
 ## Project-Local Truth
 
 Canonical project state, decisions, artifacts, evidence, verification, and logs
-belong in the project-local storage surface.
-
-This foundation repo does not currently require a `projects/` root. Do not
-create one unless the task explicitly asks for project storage or a migration
-establishes it.
+belong to the project surface that owns them. This foundation repo should not
+become a generic project storage root.
 
 When project storage exists, it should be self-describing: state, decisions,
 artifacts, logs, evidence, verification, implementation refs, and overlays
 should be discoverable from project-local records.
 
-## Overlay Rule
+## Overlays
 
-External overlays may mirror, summarize, index, or present project state:
-dashboards, Obsidian vaults, exported docs, generated reports, or issue
-trackers.
+Dashboards, vaults, summaries, exports, generated reports, and issue trackers
+may mirror or summarize project state. They are overlays unless an explicit
+storage map says otherwise. If an overlay conflicts with the project-local
+record, the project-local record wins unless a migration changes that rule.
 
-Overlays are not the canonical record. They should link back to the
-project-local source. If an overlay conflicts with the project-local record, the
-project-local record wins unless a migration or correction explicitly changes
-that rule.
+## Ignored Or Non-Truth Surfaces
 
-## Secrets
+`.serena/`, `archive/`, auth files, tokens, cookies, API keys, logs, caches,
+browser sessions, downloaded runtime payloads, and local runtime state are not
+repo truth.
 
-Never put credentials, API keys, tokens, passwords, private keys, or session
-secrets in prompts, packets, logs, metadata, repo files, templates, artifacts,
-or overlays.
+Scripts may create ignored local tool state during restore, but tracked files
+must remain sanitized and must not embed credentials or machine-specific logs.
+Required secret scanning covers committable content and Git history. Ignored and
+untracked local state is outside required CI and hook scope. Optional local deep
+scans may be run manually, but they are not repo truth.
 
-If a task needs credentials, refer to the expected secret boundary or runtime
-configuration without copying the secret into the repo.
+## Skills And Plugins
+
+Load only the smallest relevant skill. Do not read all skill roots by default.
+
+Skills provide domain method, examples, and local conventions. They do not
+override active docs, allowed write targets, denied context, secret boundaries,
+human gates, verification requirements, or storage rules.
+
+Plugin registry and payload changes are repo changes. Treat them as local writes
+and run relevant structure, contract, lint, typecheck, or smoke checks when
+applicable.
+
+Extension-surface integrity checks are structural only:
+
+- each local skill directory has a parseable `SKILL.md` with minimal metadata
+- the human skill index covers repo-local skill roots
+- plugin registry paths are relative and resolve under `plugins/`
+- plugin manifests and MCP config samples parse and point to existing local
+  paths
+
+Do not install plugin dependencies, launch MCP servers, perform network calls,
+or turn skills/plugins into a package-manager or marketplace-governance system
+unless a future distribution contract explicitly requires it.
 
 ## Past-Source Rule
 
 Past-source material is not tracked repo truth. Distill useful content into the
-current active docs or compact references before relying on it.
+current active docs or references before relying on it.

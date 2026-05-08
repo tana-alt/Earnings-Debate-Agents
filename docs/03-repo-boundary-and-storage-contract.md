@@ -2,54 +2,59 @@
 
 ## Active Surface
 
-Routine agents read `AGENTS.md` and the three active docs in `docs/`. Detailed
-current material lives in `docs/reference/`.
+This is a compact foundation repo. `AGENTS.md` routes work. Active contracts in
+`docs/` define behavior. Detailed guidance lives in `docs/reference/` and is
+opened only when needed.
 
-## Folder Rules
+## Repo Truth
 
-- `app/`: runnable app code only when this repo truly needs it.
-- `src/`: shared implementation code only.
-- `docs/`: active docs and reference summaries.
-- `artifact/`: foundation repo outputs, fixtures, or generated records.
-- `templates/`: reusable templates only.
-- `scripts/`: repo bootstrap and verification helpers only.
-- `tests/`: foundation contract and integrity checks only.
-- `.agents/skills/`: current repo-local Codex skills.
-- `.codex/skills/`: preserved existing Codex skills; consult before changing.
-- `.agents/plugins/marketplace.json`: Codex plugin registry.
-- `plugins/`: local plugin bundles and downloaded plugin payloads.
-- `.github/workflows/ci.yml`: CI entrypoint for required checks.
-- `Makefile`, `pyproject.toml`, `uv.lock`: local verification tooling.
+Current repo truth includes `AGENTS.md`, `docs/`, `docs/reference/`,
+`README.md`, `templates/`, `scripts/`, `tests/`, `pyproject.toml`, `uv.lock`,
+`Makefile`, `.python-version`, `.editorconfig`, `.gitattributes`,
+`.gitleaks.toml`,
+`.github/workflows/ci.yml`, `.agents/skills/`,
+`.agents/plugins/marketplace.json`, `plugins/`, `hooks/`, `Plan/`, `app/`,
+`src/`, and `artifact/`.
 
-The current `tests/` root is deliberately introduced for this foundation repo's
-verification checks. Do not treat `apps/`, `artifacts/`, `projects/`, or
-product-test references as current roots unless those folders are deliberately
-introduced.
+Use `docs/reference/repo-boundary-and-storage-reference.md` for the detailed
+folder map.
 
-Do not restore old `.agents` surfaces outside current skills and plugin
-marketplace registry.
-Do not commit local Serena runtime state; `.serena/` is ignored local tool state,
-not project truth.
-Do not commit past-source archives; `archive/` is ignored local material, not
-project truth.
-Commit sanitized environment templates and restore scripts instead of local tool
-state, credentials, logs, caches, or downloaded payloads.
+## Storage Rules
 
-## Storage And Overlays
+Do not turn this repo into default storage for runtime state, active plans,
+queues, lock indexes, broad project logs, browser sessions, local caches, or
+secret-bearing material.
 
-Project truth should be project-local when project repos exist. Overlays such as
-dashboards, vaults, summaries, and generated views are not canonical unless a
-storage map says so.
+Track sanitized templates, restore scripts, compact contracts, references, and
+verification helpers instead of local operational state.
 
-## Packets And Secrets
+`Plan/` may hold scoped human planning notes for substantial or resumable work;
+it is not a default runtime queue, lock ledger, or agent state store.
 
-Packets carry refs such as `content_ref`, `body_ref`, and `evidence_refs`; they
-must not embed raw content bodies or credentials.
+Local worktrees are execution workspaces, not repo truth. Do not create tracked
+state for worktree queues, branch locks, or runtime ledgers unless a current
+repo file explicitly establishes ownership, retention, verification, and cleanup
+rules.
 
-Secrets, tokens, cookies, browser sessions, API keys, and private credentials
-must not be written into prompts, packets, logs, metadata, or repo files.
+## Secrets And Past Source
 
-## Past-Source Rule
+`.serena/`, `archive/`, auth files, tokens, cookies, API keys, logs, caches,
+and local runtime state are not repo truth.
+
+Do not write secrets, credentials, raw bodies, browser sessions, or
+secret-bearing metadata into prompts, packets, docs, logs, artifacts, templates,
+or repo files.
 
 Distill useful past-source content into active docs or current references before
-using it. Past-source copies should stay outside tracked repo truth.
+using it.
+
+## Skills And Plugins
+
+Load only the smallest relevant skill. Do not read all skills by default.
+
+When a selected skill materially shapes the work, name the skill ref in the
+output.
+
+Skills and plugins do not override active docs, allowed write targets, denied
+context, secret boundaries, human gates, verification requirements, or storage
+rules.

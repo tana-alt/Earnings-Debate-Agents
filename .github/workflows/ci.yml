@@ -6,23 +6,42 @@ on:
       - "**"
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version-file: ".python-version"
 
       - uses: astral-sh/setup-uv@v5
         with:
           version: "0.11.4"
           enable-cache: true
 
+      - name: Install OSS check tools
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          GITLEAKS_ARCHIVE="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${GITLEAKS_ARCHIVE}" -o "/tmp/${GITLEAKS_ARCHIVE}"
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_checksums.txt" -o /tmp/gitleaks_checksums.txt
+          grep "${GITLEAKS_ARCHIVE}" /tmp/gitleaks_checksums.txt > /tmp/gitleaks_sha256.txt
+          cd /tmp
+          sha256sum -c /tmp/gitleaks_sha256.txt
+          tar -xzf "/tmp/${GITLEAKS_ARCHIVE}" -C /tmp gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+
       - name: Install dependencies
         run: uv sync --frozen --group dev
 
-      - name: Required checks
-        run: make check-required
+      - name: Foundation Robustness Gate
+        run: make check-foundation
