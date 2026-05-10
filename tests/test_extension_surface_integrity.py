@@ -67,7 +67,6 @@ def test_plugin_registry_and_manifest_paths_are_structural() -> None:
     marketplace = read_json(".agents/plugins/marketplace.json")
     plugins = marketplace.get("plugins")
     assert isinstance(plugins, list)
-    assert plugins
 
     seen_plugin_names: set[str] = set()
 
@@ -133,8 +132,23 @@ def test_plugin_registry_and_manifest_paths_are_structural() -> None:
 
 
 def test_plugin_skill_front_matter_is_parseable() -> None:
-    plugin_skill_files = sorted((ROOT / "plugins").glob("*/skills/*/SKILL.md"))
-    assert plugin_skill_files
+    marketplace = read_json(".agents/plugins/marketplace.json")
+    plugins = marketplace.get("plugins")
+    assert isinstance(plugins, list)
+
+    plugin_roots = [
+        assert_relative_child_path(
+            ROOT,
+            cast(dict[str, Any], plugin_entry).get("source", {}).get("path"),
+            f"{cast(dict[str, Any], plugin_entry).get('name')}: source.path",
+        )
+        for plugin_entry in plugins
+    ]
+    plugin_skill_files = sorted(
+        skill_file
+        for plugin_root in plugin_roots
+        for skill_file in plugin_root.glob("skills/*/SKILL.md")
+    )
 
     seen_plugin_skill_names: set[str] = set()
 

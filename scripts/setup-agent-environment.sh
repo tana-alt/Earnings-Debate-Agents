@@ -15,7 +15,8 @@ mkdir -p "$ROOT/.serena" "$HOME/.codex"
 
 if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   git -C "$ROOT" config core.hooksPath hooks
-  if [ "$FORCE" = "1" ] || ! git -C "$ROOT" config --get foundation.canonicalRoot >/dev/null 2>&1; then
+  CONFIGURED_CANONICAL_ROOT="$(git -C "$ROOT" config --get foundation.canonicalRoot 2>/dev/null || true)"
+  if [ "$FORCE" = "1" ] || [ -z "$CONFIGURED_CANONICAL_ROOT" ] || [ ! -d "$CONFIGURED_CANONICAL_ROOT" ]; then
     git -C "$ROOT" config foundation.canonicalRoot "$ROOT"
     echo "configured foundation.canonicalRoot=$ROOT"
   else
