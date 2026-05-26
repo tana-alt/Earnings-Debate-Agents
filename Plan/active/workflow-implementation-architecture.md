@@ -83,46 +83,99 @@ earnings-debate-agent/
       - 旧 CLI-first prototype
 ```
 
-## Skill Directory Structure
+## Agent Skill Directory Structure
 
-この設計は skill としても配置できるようにする。
+workflow 自体は skill にしない。
+
+workflow は API runtime の固定オーケストレーションとして `src/workflow.py` に残す。
+skill として配置する対象は、各専門エージェントの prompt / role instruction / evidence policy である。
+
+理由:
+
+- API だけで動く成果物にするため、実行順序、validation gate、aggregation、Markdown rendering は Python workflow が所有する
+- skill は LLM agent の専門性を差し替え・参照しやすくするための prompt asset として使う
+- hook は workflow を発火するのではなく、該当 agent prompt skill を読み込ませる入口として使う
+- Pydantic schema は runtime contract なので skill 側へ複製せず、skill は schema 名と出力制約を参照する
 
 想定構造:
 
 ```text
-.codex/skills/earnings-review-workflow/
+.agents/skills/earnings-review-agents/
   SKILL.md
+  prompts/
+    financial/
+      earnings_quality_analyst.md
+      cash_flow_risk_analyst.md
+    presentation/
+      management_intent_analyst.md
+      guidance_analyst.md
+    debate/
+      bull_agent.md
+      bear_agent.md
+      judge_agent.md
+    shared/
+      global_policy.md
+      evidence_policy.md
+      output_policy.md
   references/
     workflow-agent-handoff.md
     specialist-agent-workflow-design.md
-    workflow-implementation-architecture.md
 ```
 
-`SKILL.md` は短く保つ。
+`SKILL.md` は routing と共通制約だけを書く。
 
 含める内容:
 
-- この repo の workflow / agent / API / prompt / Pydantic 契約を変更する時に使うこと
-- 7-agent 構成を守ること
-- Data ingestion / calculation / Markdown rendering は Python に残すこと
-- LLM agent には必要最小限の context だけを注入すること
-- 詳細は `references/` の3文書を読むこと
+- 対象 agent 名と prompt file の対応
+- 各 agent が読む routed_context key
+- LLM は計算しないこと
+- `source_ref` を捏造しないこと
+- 出力は Pydantic model に合う JSON のみであること
+- 投資助言、株価予測、目標株価、売買推奨を書かないこと
+- 詳細設計は `references/` の文書を読むこと
+
+runtime code から見ると、skill は以下のように使う。
+
+```text
+ReviewWorkflow
+  ↓
+workflow_agents.py が agent role を決める
+  ↓
+hook / loader が role に対応する prompt skill を解決する
+  ↓
+LLMProvider.complete(system=resolved_prompt, user=routed_context)
+  ↓
+Pydantic validation
+```
+
+このため、skill は workflow の代替ではない。
+skill は `workflow_agents.py` の各 agent wrapper が使う prompt source であり、workflow の順序制御やvalidationは引き続き Python 側が担う。
 
 ## Hook Trigger Assumption
 
-hook は以下のファイル変更時に、この skill を参照するよう促す。
+hook は以下のタイミングで、該当 agent prompt skill を参照する。
+
+runtime hook:
 
 ```text
-src/workflow.py
-src/workflow_agents.py
-src/workflow_models.py
-src/preprocessor.py
-src/prompts/*.md
-Plan/active/*workflow*.md
-Plan/active/*agent*.md
+agent_role = EarningsQualityAnalyst -> prompts/financial/earnings_quality_analyst.md
+agent_role = CashFlowRiskAnalyst -> prompts/financial/cash_flow_risk_analyst.md
+agent_role = ManagementIntentAnalyst -> prompts/presentation/management_intent_analyst.md
+agent_role = GuidanceAnalyst -> prompts/presentation/guidance_analyst.md
+agent_role = BullAgent -> prompts/debate/bull_agent.md
+agent_role = BearAgent -> prompts/debate/bear_agent.md
+agent_role = JudgeAgent -> prompts/debate/judge_agent.md
 ```
 
-hook の目的は実装を止めることではなく、Plan と実装のズレを早期に気づかせること。
+development hook:
+
+```text
+src/prompts/*.md
+Plan/active/*agent*.md
+Plan/active/*workflow*.md
+```
+
+development hook の目的は実装を止めることではなく、agent prompt と Plan / Pydantic contract のズレを早期に気づかせること。
 
 ## Runtime Workflow
 
