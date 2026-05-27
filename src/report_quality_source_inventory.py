@@ -2,11 +2,23 @@
 
 from __future__ import annotations
 
+from typing import TypedDict
+
 try:
     from .report_quality_source_timing import source_timing_label
 except Exception:  # pragma: no cover
     def source_timing_label(ref) -> str:  # type: ignore
         return "unknown"
+
+
+class SourceInventoryRow(TypedDict):
+    source_id: object
+    type: object
+    locator: object
+    title: object
+    url: str
+    timing: object
+    used_for: set[str]
 
 
 def escape_md_table(value: object) -> str:
@@ -24,7 +36,7 @@ def _collect_findings(brief) -> list:
 
 
 def source_inventory_lines(brief, decision=None) -> list[str]:
-    rows: dict[tuple, dict[str, object]] = {}
+    rows: dict[tuple[object, ...], SourceInventoryRow] = {}
     for finding in _collect_findings(brief):
         if finding is None:
             continue
@@ -50,7 +62,7 @@ def source_inventory_lines(brief, decision=None) -> list[str]:
                     "title": getattr(ref, "title", None) or getattr(ref, "source_id", "source"),
                     "url": str(getattr(ref, "url", "") or ""),
                     "timing": source_timing_label(ref),
-                    "used_for": set(),
+                    "used_for": set[str](),
                 },
             )
             entry["used_for"].add(f"{agent}: {getattr(item, 'summary', '')[:80]}")
