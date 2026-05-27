@@ -4,6 +4,7 @@ Supports Anthropic and OpenAI via a single interface so the rest of the
 codebase is provider-agnostic. The choice is controlled by the
 `LLM_PROVIDER` environment variable (twelve-factor: config in env).
 """
+
 from __future__ import annotations
 
 import os
@@ -26,13 +27,13 @@ class LLMProvider(ABC):
         user: str,
         max_tokens: int = 2048,
         temperature: float = 0.7,
-    ) -> LLMResponse:
-        ...
+    ) -> LLMResponse: ...
 
 
 class AnthropicProvider(LLMProvider):
     def __init__(self, model: str | None = None):
         from anthropic import Anthropic
+
         self.client = Anthropic()  # picks up ANTHROPIC_API_KEY from env
         self.model = model or os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5")
 
@@ -54,6 +55,7 @@ class AnthropicProvider(LLMProvider):
 class OpenAIProvider(LLMProvider):
     def __init__(self, model: str | None = None):
         from openai import OpenAI
+
         self.client = OpenAI()  # picks up OPENAI_API_KEY from env
         self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o")
 
