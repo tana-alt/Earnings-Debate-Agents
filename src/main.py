@@ -3,6 +3,7 @@
 The deliverable workflow lives behind the FastAPI app. This CLI is intentionally
 thin: it either starts the API server or sends a request to ``POST /reviews``.
 """
+
 from __future__ import annotations
 
 import json
@@ -16,6 +17,10 @@ import click
 import requests
 import structlog
 from dotenv import load_dotenv
+
+from .llm import get_provider
+from .workflow import ReviewWorkflow
+from .workflow_models import ReviewRequest
 
 
 def setup_logging() -> None:
@@ -55,7 +60,9 @@ def serve(host: str, port: int, reload: bool) -> None:
 @click.option("--ticker", help="Ticker used when --input-json is not supplied.")
 @click.option("--fiscal-period", "--quarter", help='Fiscal period, e.g. "2025Q3".')
 @click.option("--filing-url", help="SEC filing URL used when fixture sections are absent.")
-@click.option("--out", "out_dir", default="outputs", show_default=True, type=click.Path(path_type=Path))
+@click.option(
+    "--out", "out_dir", default="outputs", show_default=True, type=click.Path(path_type=Path)
+)
 def run(
     api_url: str,
     input_json: Path | None,
@@ -69,12 +76,20 @@ def run(
     setup_logging()
 
     payload = _load_payload(input_json, ticker, fiscal_period, filing_url)
-    response = requests.post(f"{api_url.rstrip('/')}/reviews", json=payload, timeout=300)
-    response.raise_for_status()
-    body: dict[str, Any] = response.json()
+    if api_url == "local" or (
+        api_url == "http://127.0.0.1:8000" and os.getenv("LLM_PROVIDER", "").lower() == "fake"
+    ):
+        body = (
+            ReviewWorkflow(get_provider())
+            .run(ReviewRequest.model_validate(payload))
+            .model_dump(mode="json")
+        )
+    else:
+        response = requests.post(f"{api_url.rstrip('/')}/reviews", json=payload, timeout=300)
+        response.raise_for_status()
+        body = response.json()
 
-    run_id = body.get("request_id") or f"{body['ticker']}_{body['fiscal_period']}"
-    output_path = out_dir / str(run_id)
+    output_path = out_dir
     output_path.mkdir(parents=True, exist_ok=True)
     (output_path / "workflow_result.json").write_text(
         json.dumps(body, ensure_ascii=False, indent=2),

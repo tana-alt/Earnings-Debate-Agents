@@ -4,6 +4,7 @@ These models define the boundary between workflow stages:
 Data ingestion -> Financial Agents -> Presentation Agents ->
 Evidence Aggregation -> Debate -> Judge -> MarkdownRenderer.
 """
+
 from __future__ import annotations
 
 import re
@@ -20,7 +21,6 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-
 
 NonEmptyText = Annotated[str, Field(min_length=1)]
 
@@ -85,17 +85,21 @@ class StepState(str, Enum):
 
 
 class AgentRole(str, Enum):
-    EPS_ANALYST = "eps_analyst"
-    PNL_ANALYST = "pnl_analyst"
-    CFS_ANALYST = "cfs_analyst"
-    BS_ANALYST = "bs_analyst"
-    MANAGEMENT_EVAL = "management_eval"
+    EARNINGS_QUALITY = "earnings_quality"
+    CASH_FLOW_RISK = "cash_flow_risk"
+    MANAGEMENT_INTENT = "management_intent"
     GUIDANCE = "guidance"
     BULL = "bull"
     BEAR = "bear"
-    RISK = "risk"
-    EVAL = "eval"
     JUDGE = "judge"
+
+    EPS_ANALYST = "earnings_quality"
+    PNL_ANALYST = "earnings_quality"
+    CFS_ANALYST = "cash_flow_risk"
+    BS_ANALYST = "cash_flow_risk"
+    MANAGEMENT_EVAL = "management_intent"
+    RISK = "bear"
+    EVAL = "judge"
 
 
 class AgentTeam(str, Enum):
@@ -103,6 +107,17 @@ class AgentTeam(str, Enum):
     PRESENTATION = "presentation"
     DEBATE = "debate"
     JUDGE = "judge"
+
+
+LEGACY_AGENT_ROLE_VALUES = {
+    "eps_analyst": AgentRole.EARNINGS_QUALITY,
+    "pnl_analyst": AgentRole.EARNINGS_QUALITY,
+    "cfs_analyst": AgentRole.CASH_FLOW_RISK,
+    "bs_analyst": AgentRole.CASH_FLOW_RISK,
+    "management_eval": AgentRole.MANAGEMENT_INTENT,
+    "risk": AgentRole.BEAR,
+    "eval": AgentRole.JUDGE,
+}
 
 
 class SourceRef(WorkflowModel):
@@ -169,6 +184,13 @@ class DocumentSection(WorkflowModel):
         return self
 
 
+class DocumentFile(WorkflowModel):
+    path: str = Field(min_length=1, max_length=500)
+    source_type: SourceType = SourceType.MANUAL_UPLOAD
+    document_id: str = Field(min_length=1, max_length=120, pattern=r"^[A-Za-z0-9_.:-]+$")
+    title: str = Field(min_length=1, max_length=300)
+
+
 class FinancialMetrics(WorkflowModel):
     ticker: str = Field(min_length=1, max_length=15)
     fiscal_period: str = Field(pattern=r"^\d{4}Q[1-4]$")
@@ -219,6 +241,7 @@ class ReviewRequest(WorkflowModel):
     presentation_url: AnyUrl | None = None
     transcript_url: AnyUrl | None = None
     financial_metrics: FinancialMetrics | None = None
+    document_files: list[DocumentFile] = Field(default_factory=list, max_length=20)
     document_sections: list[DocumentSection] = Field(default_factory=list, max_length=200)
     source_refs: list[SourceRef] = Field(default_factory=list, max_length=100)
     include_markdown: bool = True
@@ -288,6 +311,13 @@ class AgentResult(WorkflowModel):
     open_questions: list[NonEmptyText] = Field(default_factory=list, max_length=8)
     confidence: float = Field(ge=0.0, le=1.0)
 
+    @field_validator("agent_role", mode="before")
+    @classmethod
+    def normalize_legacy_agent_role(cls, value: AgentRole | str) -> AgentRole | str:
+        if isinstance(value, str):
+            return LEGACY_AGENT_ROLE_VALUES.get(value, value)
+        return value
+
 
 class AgentFinding(WorkflowModel):
     agent_name: str = Field(min_length=1, max_length=80)
@@ -300,20 +330,20 @@ class AgentFinding(WorkflowModel):
     handoff_summary: str = Field(min_length=1, max_length=2000)
 
 
-class EPSQualityFinding(AgentFinding):
-    agent_name: Literal["EPSQualityAnalyst"] = "EPSQualityAnalyst"
+class EarningsQualityFinding(AgentFinding):
+    agent_name: Literal[
+        "EarningsQualityAnalyst",
+        "EPSQualityAnalyst",
+        "ProfitabilityAnalyst",
+    ] = "EarningsQualityAnalyst"
 
 
-class ProfitabilityFinding(AgentFinding):
-    agent_name: Literal["ProfitabilityAnalyst"] = "ProfitabilityAnalyst"
-
-
-class CashFlowFcfFinding(AgentFinding):
-    agent_name: Literal["CashFlowFcfAnalyst"] = "CashFlowFcfAnalyst"
-
-
-class BalanceSheetRiskFinding(AgentFinding):
-    agent_name: Literal["BalanceSheetRiskAnalyst"] = "BalanceSheetRiskAnalyst"
+class CashFlowRiskFinding(AgentFinding):
+    agent_name: Literal[
+        "CashFlowRiskAnalyst",
+        "CashFlowFcfAnalyst",
+        "BalanceSheetRiskAnalyst",
+    ] = "CashFlowRiskAnalyst"
 
 
 class ManagementIntentFinding(AgentFinding):
@@ -324,9 +354,63 @@ class GuidanceFinding(AgentFinding):
     agent_name: Literal["GuidanceAnalyst"] = "GuidanceAnalyst"
 
 
+class EPSQualityFinding(EarningsQualityFinding):
+    agent_name: Literal["EarningsQualityAnalyst", "EPSQualityAnalyst"] = "EarningsQualityAnalyst"
+
+
+class ProfitabilityFinding(EarningsQualityFinding):
+    agent_name: Literal["EarningsQualityAnalyst", "ProfitabilityAnalyst"] = "EarningsQualityAnalyst"
+
+
+class CashFlowFcfFinding(CashFlowRiskFinding):
+    agent_name: Literal["CashFlowRiskAnalyst", "CashFlowFcfAnalyst"] = "CashFlowRiskAnalyst"
+
+
+class BalanceSheetRiskFinding(CashFlowRiskFinding):
+    agent_name: Literal["CashFlowRiskAnalyst", "BalanceSheetRiskAnalyst"] = "CashFlowRiskAnalyst"
+
+
+class FindingCoverage(str, Enum):
+    SUPPORTING = "supporting"
+    OPPOSING = "opposing"
+    NOT_MATERIAL = "not_material"
+    MISSING = "missing"
+
+
+FindingCoverageKey = Literal[
+    "earnings_quality",
+    "cash_flow_risk",
+    "management_intent",
+    "guidance",
+]
+FindingCoverageMap = dict[FindingCoverageKey, FindingCoverage]
+REQUIRED_FINDING_COVERAGE_KEYS = frozenset(
+    {"earnings_quality", "cash_flow_risk", "management_intent", "guidance"}
+)
+
+
+def validate_finding_coverage_keys(coverage: FindingCoverageMap) -> FindingCoverageMap:
+    keys = set(coverage)
+    missing = REQUIRED_FINDING_COVERAGE_KEYS - keys
+    extra = keys - REQUIRED_FINDING_COVERAGE_KEYS
+    if missing or extra:
+        details: list[str] = []
+        if missing:
+            details.append(f"missing keys: {', '.join(sorted(missing))}")
+        if extra:
+            details.append(f"unexpected keys: {', '.join(sorted(extra))}")
+        message = "finding_coverage must include exactly the four specialist keys"
+        raise ValueError(f"{message}; {'; '.join(details)}")
+    return coverage
+
+
 class AnalysisBrief(WorkflowModel):
     ticker: str = Field(min_length=1, max_length=15)
     fiscal_period: str = Field(pattern=r"^\d{4}Q[1-4]$")
+    earnings_quality_finding: EarningsQualityFinding
+    cash_flow_risk_finding: CashFlowRiskFinding
+    management_intent_finding: ManagementIntentFinding
+    guidance_finding: GuidanceFinding
     financial_agent_results: list[AgentResult] = Field(default_factory=list, max_length=8)
     presentation_agent_results: list[AgentResult] = Field(default_factory=list, max_length=8)
     positive_evidence_pool: list[EvidenceItem] = Field(default_factory=list, max_length=30)
@@ -362,9 +446,15 @@ class BullCase(WorkflowModel):
     fcf_bull_argument: str = Field(min_length=1, max_length=1200)
     conditions_needed: list[NonEmptyText] = Field(min_length=1, max_length=8)
     weak_points: list[NonEmptyText] = Field(min_length=1, max_length=8)
+    finding_coverage: FindingCoverageMap = Field(min_length=4, max_length=4)
     disputed_points_to_watch: list[NonEmptyText] = Field(default_factory=list, max_length=8)
     confidence: float = Field(ge=0.0, le=1.0)
     missing_data: list[NonEmptyText] = Field(default_factory=list, max_length=8)
+
+    @field_validator("finding_coverage")
+    @classmethod
+    def validate_finding_coverage(cls, value: FindingCoverageMap) -> FindingCoverageMap:
+        return validate_finding_coverage_keys(value)
 
 
 class BearCase(WorkflowModel):
@@ -376,9 +466,15 @@ class BearCase(WorkflowModel):
     fcf_bear_argument: str = Field(min_length=1, max_length=1200)
     failure_modes: list[NonEmptyText] = Field(min_length=1, max_length=8)
     counter_to_bull_case: list[NonEmptyText] = Field(min_length=1, max_length=8)
+    finding_coverage: FindingCoverageMap = Field(min_length=4, max_length=4)
     unresolved_risks: list[NonEmptyText] = Field(default_factory=list, max_length=8)
     confidence: float = Field(ge=0.0, le=1.0)
     missing_data: list[NonEmptyText] = Field(default_factory=list, max_length=8)
+
+    @field_validator("finding_coverage")
+    @classmethod
+    def validate_finding_coverage(cls, value: FindingCoverageMap) -> FindingCoverageMap:
+        return validate_finding_coverage_keys(value)
 
 
 class JudgeDecision(WorkflowModel):
@@ -389,11 +485,16 @@ class JudgeDecision(WorkflowModel):
     positive_evidence: list[EvidenceItem] = Field(min_length=1, max_length=10)
     negative_evidence: list[EvidenceItem] = Field(min_length=1, max_length=10)
     eps_outlook: str = Field(min_length=1, max_length=1200)
+    eps_outlook_reason: str = Field(min_length=1, max_length=2000)
     fcf_outlook: str = Field(min_length=1, max_length=1200)
+    fcf_outlook_reason: str = Field(min_length=1, max_length=2000)
     purpose: Literal["earnings_review_not_investment_advice"] = (
         "earnings_review_not_investment_advice"
     )
     is_investment_advice: Literal[False] = False
+
+
+FinalVerdict = JudgeDecision
 
 
 class ReviewResponse(WorkflowModel):
@@ -402,6 +503,8 @@ class ReviewResponse(WorkflowModel):
     fiscal_period: str = Field(pattern=r"^\d{4}Q[1-4]$")
     steps: list[StepStatus] = Field(min_length=1, max_length=20)
     analysis_brief: AnalysisBrief
+    bull_case: BullCase
+    bear_case: BearCase
     debate_result: DebateResult
     judge_decision: JudgeDecision
     markdown_report: str = Field(min_length=1, max_length=20000)
