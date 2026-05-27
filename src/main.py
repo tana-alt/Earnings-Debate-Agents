@@ -3,6 +3,7 @@
 The deliverable workflow lives behind the FastAPI app. This CLI is intentionally
 thin: it either starts the API server or sends a request to ``POST /reviews``.
 """
+
 from __future__ import annotations
 
 import json
@@ -55,7 +56,9 @@ def serve(host: str, port: int, reload: bool) -> None:
 @click.option("--ticker", help="Ticker used when --input-json is not supplied.")
 @click.option("--fiscal-period", "--quarter", help='Fiscal period, e.g. "2025Q3".')
 @click.option("--filing-url", help="SEC filing URL used when fixture sections are absent.")
-@click.option("--out", "out_dir", default="outputs", show_default=True, type=click.Path(path_type=Path))
+@click.option(
+    "--out", "out_dir", default="outputs", show_default=True, type=click.Path(path_type=Path)
+)
 def run(
     api_url: str,
     input_json: Path | None,
