@@ -356,7 +356,9 @@ def fetch_filing_html(url: str) -> str:
     except requests.Timeout as exc:
         raise APITimeoutError(f"SEC filing request timed out: {url}", source="sec") from exc
     except requests.ConnectionError as exc:
-        raise APIConnectionError(f"SEC filing request failed to connect: {url}", source="sec") from exc
+        raise APIConnectionError(
+            f"SEC filing request failed to connect: {url}", source="sec"
+        ) from exc
     except requests.RequestException as exc:
         raise APIHTTPStatusError(
             f"SEC filing request failed before a response was received: {url}",
