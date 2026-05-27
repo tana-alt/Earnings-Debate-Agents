@@ -63,14 +63,22 @@ def extract_guidance_fact(metrics, sections: list) -> GuidanceFact:
     if guidance_refs:
         return GuidanceFact(status=GuidanceStatus.FOUND, source_refs=guidance_refs)
     if no_guidance_refs:
-        return GuidanceFact(status=GuidanceStatus.NOT_DISCLOSED, source_refs=no_guidance_refs, reason="A routed source explicitly states that guidance was not provided.")
-    return GuidanceFact(status=GuidanceStatus.NOT_FOUND, reason="No routed guidance/outlook source was found.")
+        return GuidanceFact(
+            status=GuidanceStatus.NOT_DISCLOSED,
+            source_refs=no_guidance_refs,
+            reason="A routed source explicitly states that guidance was not provided.",
+        )
+    return GuidanceFact(
+        status=GuidanceStatus.NOT_FOUND, reason="No routed guidance/outlook source was found."
+    )
 
 
 def validate_guidance_required(metrics, sections: list) -> GuidanceFact:
     """Validate guidance acquisition. Set EARNINGS_DEBATE_REQUIRE_GUIDANCE=0 only for legacy tests."""
     if os.getenv("EARNINGS_DEBATE_REQUIRE_GUIDANCE", "1").strip().lower() in {"0", "false", "no"}:
-        return GuidanceFact(status=GuidanceStatus.AMBIGUOUS, reason="Guidance gate disabled by environment.")
+        return GuidanceFact(
+            status=GuidanceStatus.AMBIGUOUS, reason="Guidance gate disabled by environment."
+        )
     fact = extract_guidance_fact(metrics, sections)
     if fact.status in {GuidanceStatus.FOUND, GuidanceStatus.NOT_DISCLOSED} and fact.source_refs:
         return fact

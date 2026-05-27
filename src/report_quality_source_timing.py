@@ -26,7 +26,9 @@ def _source_type_value(ref) -> str:
     return str(getattr(value, "value", value))
 
 
-def classify_source_timing(ref, *, event_date: date | None = None, published_date: date | None = None) -> SourceTiming:
+def classify_source_timing(
+    ref, *, event_date: date | None = None, published_date: date | None = None
+) -> SourceTiming:
     source_type = _source_type_value(ref)
     if source_type in PRIMARY_SOURCE_TYPES:
         return SourceTiming.SAME_PERIOD_PRIMARY

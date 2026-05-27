@@ -10,6 +10,7 @@ from typing import Iterable
 try:
     from .report_quality_source_timing import source_timing_label
 except Exception:  # pragma: no cover
+
     def source_timing_label(ref) -> str:  # type: ignore
         return "unknown"
 
@@ -50,7 +51,12 @@ def format_evidence_value(item) -> str:
 def source_label(ref) -> str:
     if ref is None:
         return "—"
-    locator = getattr(ref, "metric_name", None) or getattr(ref, "section_id", None) or getattr(ref, "document_id", None) or "source"
+    locator = (
+        getattr(ref, "metric_name", None)
+        or getattr(ref, "section_id", None)
+        or getattr(ref, "document_id", None)
+        or "source"
+    )
     return f"`{getattr(ref, 'source_id', 'source')}` / {locator}"
 
 

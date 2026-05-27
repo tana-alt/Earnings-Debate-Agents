@@ -5,6 +5,7 @@ from __future__ import annotations
 try:
     from .report_quality_source_timing import source_timing_label
 except Exception:  # pragma: no cover
+
     def source_timing_label(ref) -> str:  # type: ignore
         return "unknown"
 
@@ -29,13 +30,20 @@ def source_inventory_lines(brief, decision=None) -> list[str]:
         if finding is None:
             continue
         agent = getattr(finding, "agent_name", "UnknownAgent")
-        for item in [*(getattr(finding, "key_evidence", []) or []), *(getattr(finding, "counter_evidence", []) or [])]:
+        for item in [
+            *(getattr(finding, "key_evidence", []) or []),
+            *(getattr(finding, "counter_evidence", []) or []),
+        ]:
             ref = getattr(item, "source_ref", None)
             if ref is None:
                 continue
             key = (
                 getattr(ref, "source_id", None),
-                str(getattr(getattr(ref, "source_type", None), "value", getattr(ref, "source_type", ""))),
+                str(
+                    getattr(
+                        getattr(ref, "source_type", None), "value", getattr(ref, "source_type", "")
+                    )
+                ),
                 getattr(ref, "metric_name", None),
                 getattr(ref, "section_id", None),
                 getattr(ref, "document_id", None),
@@ -45,8 +53,17 @@ def source_inventory_lines(brief, decision=None) -> list[str]:
                 key,
                 {
                     "source_id": getattr(ref, "source_id", "source"),
-                    "type": str(getattr(getattr(ref, "source_type", None), "value", getattr(ref, "source_type", ""))),
-                    "locator": getattr(ref, "metric_name", None) or getattr(ref, "section_id", None) or getattr(ref, "document_id", None) or "source",
+                    "type": str(
+                        getattr(
+                            getattr(ref, "source_type", None),
+                            "value",
+                            getattr(ref, "source_type", ""),
+                        )
+                    ),
+                    "locator": getattr(ref, "metric_name", None)
+                    or getattr(ref, "section_id", None)
+                    or getattr(ref, "document_id", None)
+                    or "source",
                     "title": getattr(ref, "title", None) or getattr(ref, "source_id", "source"),
                     "url": str(getattr(ref, "url", "") or ""),
                     "timing": source_timing_label(ref),
