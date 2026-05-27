@@ -94,6 +94,12 @@ def _segment_filing(html: str):
     return segment_filing(html)
 
 
+def _document_files_to_sections(document_files):
+    from .preprocessor import document_files_to_sections
+
+    return document_files_to_sections(document_files)
+
+
 class MarkdownRenderer:
     """Deterministic Markdown rendering from validated structured results."""
 
@@ -271,13 +277,17 @@ class ReviewWorkflow:
             request.financial_metrics or self._fetch_financial_metrics(request)
         )
         sections = list(request.document_sections)
+        if request.document_files:
+            sections.extend(_document_files_to_sections(request.document_files))
 
         if not sections and request.filing_url is not None:
             html = _fetch_filing_html(str(request.filing_url))
             sections = _segment_filing(html)
 
         if not sections:
-            raise WorkflowValidationError("document_sections or filing_url is required")
+            raise WorkflowValidationError(
+                "document_sections, document_files, or filing_url is required"
+            )
 
         return metrics, sections
 
