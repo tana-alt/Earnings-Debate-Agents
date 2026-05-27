@@ -263,7 +263,7 @@ earnings-debate run \
 成功すると、以下のファイルが生成されます。
 
 ```text
-outputs/sample-nvda-2025q3/
+outputs/
   ├─ workflow_result.json
   └─ report.md
 ```
