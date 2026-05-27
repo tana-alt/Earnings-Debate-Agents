@@ -27,7 +27,12 @@ def ref(source_id="filing:other", source_type="filing", metric_name=None):
     )
 
 
-def evidence(summary="Revenue growth was strong", detail="Revenue was $10 billion.", value=None, metric_name=None):
+def evidence(
+    summary="Revenue growth was strong",
+    detail="Revenue was $10 billion.",
+    value=None,
+    metric_name=None,
+):
     return SimpleNamespace(
         evidence_id="ev1",
         polarity=SimpleNamespace(value="positive"),
@@ -63,7 +68,9 @@ def brief(**kwargs):
 
 def test_guidance_gate_accepts_metrics_guidance(monkeypatch):
     monkeypatch.delenv("EARNINGS_DEBATE_REQUIRE_GUIDANCE", raising=False)
-    metrics = SimpleNamespace(guidance="Next-quarter revenue outlook is approximately $10B.", source_refs=[])
+    metrics = SimpleNamespace(
+        guidance="Next-quarter revenue outlook is approximately $10B.", source_refs=[]
+    )
     fact = validate_guidance_required(metrics, [])
     assert fact.status == "found"
 
@@ -85,7 +92,12 @@ def test_evidence_matrix_renders_value_and_source():
 
 def test_numeric_grounding_rejects_material_claim_without_number(monkeypatch):
     monkeypatch.delenv("EARNINGS_DEBATE_REQUIRE_NUMERIC_GROUNDING", raising=False)
-    item = evidence(summary="Revenue growth was strong", detail="Revenue growth was strong.", value=None, metric_name=None)
+    item = evidence(
+        summary="Revenue growth was strong",
+        detail="Revenue growth was strong.",
+        value=None,
+        metric_name=None,
+    )
     with pytest.raises(NumericGroundingError):
         validate_numeric_grounding([item])
 
@@ -95,7 +107,9 @@ def test_source_timing_primary_source():
 
 
 def test_missing_data_confidence_cap_material_caveat():
-    b = brief(guidance_finding=finding("GuidanceAnalyst", missing=["guidance metrics were not routed"]))
+    b = brief(
+        guidance_finding=finding("GuidanceAnalyst", missing=["guidance metrics were not routed"])
+    )
     cap, reasons = confidence_cap(b)
     assert cap <= 0.60
     assert reasons

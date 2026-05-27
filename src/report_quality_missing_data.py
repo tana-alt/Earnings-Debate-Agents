@@ -31,7 +31,11 @@ def collect_missing_data(brief) -> list[tuple[str, str, str]]:
         agent = getattr(finding, "agent_name", "UnknownAgent")
         for item in getattr(finding, "missing_data", []) or []:
             text = str(item)
-            severity = "material_caveat" if any(p in text.lower() for p in IMPORTANT_MISSING_PATTERNS) else "non_blocking"
+            severity = (
+                "material_caveat"
+                if any(p in text.lower() for p in IMPORTANT_MISSING_PATTERNS)
+                else "non_blocking"
+            )
             rows.append((agent, severity, text))
     return rows
 
@@ -62,10 +66,21 @@ def confidence_cap(brief, decision=None) -> tuple[float, list[str]]:
             continue
         if not getattr(finding, "counter_evidence", None):
             has_counter = False
-        for item in [*(getattr(finding, "key_evidence", []) or []), *(getattr(finding, "counter_evidence", []) or [])]:
+        for item in [
+            *(getattr(finding, "key_evidence", []) or []),
+            *(getattr(finding, "counter_evidence", []) or []),
+        ]:
             ref = getattr(item, "source_ref", None)
             if ref is not None:
-                source_types.add(str(getattr(getattr(ref, "source_type", None), "value", getattr(ref, "source_type", ""))))
+                source_types.add(
+                    str(
+                        getattr(
+                            getattr(ref, "source_type", None),
+                            "value",
+                            getattr(ref, "source_type", ""),
+                        )
+                    )
+                )
 
     if len(source_types) == 1:
         cap = min(cap, 0.65)
