@@ -875,7 +875,7 @@ class ReviewWorkflow:
         self,
         metrics: FinancialMetrics,
         sections: list[DocumentSection],
-    ) -> set[tuple[str, str, str | None, str | None, str | None]]:
+    ) -> set[tuple[str, str, str | None, str | None, str | None, int | None, str | None]]:
         return {
             self._source_signature(source)
             for source in [
@@ -887,7 +887,9 @@ class ReviewWorkflow:
     def _validate_evidence_sources(
         self,
         items: list[EvidenceItem],
-        allowed_source_ids: set[tuple[str, str, str | None, str | None, str | None]],
+        allowed_source_ids: set[
+            tuple[str, str, str | None, str | None, str | None, int | None, str | None]
+        ],
     ) -> None:
         for item in items:
             if self._source_signature(item.source_ref) not in allowed_source_ids:
@@ -899,13 +901,15 @@ class ReviewWorkflow:
     def _source_signature(
         self,
         source: SourceRef,
-    ) -> tuple[str, str, str | None, str | None, str | None]:
+    ) -> tuple[str, str, str | None, str | None, str | None, int | None, str | None]:
         return (
             source.source_id,
             source.source_type.value,
             source.document_id,
             source.section_id,
             source.metric_name,
+            source.page,
+            source.title,
         )
 
     def _extract_role_name(self, model: BaseModel) -> str:

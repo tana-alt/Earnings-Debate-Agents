@@ -311,6 +311,13 @@ curl -X POST http://127.0.0.1:8000/reviews \
   "document_sections": [
     {
       "section_id": "eps",
+      "source_ref": {
+        "source_id": "filing:eps",
+        "source_type": "filing",
+        "document_id": "10q-2025q3",
+        "section_id": "eps",
+        "title": "EPS section"
+      },
       "heading": "EPS",
       "text": "Diluted EPS exceeded consensus..."
     }
