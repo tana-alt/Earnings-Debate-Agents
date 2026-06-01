@@ -481,6 +481,8 @@ Bull evidence is stronger for the current quarter, while bear evidence limits du
 - Claim records: 1
 - Decision uses: 2
 - Missing data items: 1
+- Fact-check statuses: partially_supported: 1, supported: 1
+- Judge treatments: counter_evidence: 1, supporting: 1
 - Source references: registered and internally consistent
 - No-advice framing: present in Disclaimer
 
@@ -492,7 +494,7 @@ Bull evidence is stronger for the current quarter, while bear evidence limits du
 
 ## Disclaimer
 
-This report is an earnings analysis report and is not investment advice.
+This report is an earnings analysis artifact and is not investment advice. It does not provide stock-price forecasts or instructions to transact.
 ```
 
 ---
