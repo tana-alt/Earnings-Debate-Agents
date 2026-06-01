@@ -85,7 +85,7 @@ class MarkdownRenderer:
         debate: DebateResult,
         decision: JudgeDecision,
     ) -> str:
-        matrix = self._report_matrix(
+        matrix = self.build_report_matrix(
             request=request,
             brief=brief,
             debate=debate,
@@ -99,7 +99,7 @@ class MarkdownRenderer:
             matrix=matrix,
         )
 
-    def _report_matrix(
+    def build_report_matrix(
         self,
         *,
         request: ReviewRequest,
@@ -109,7 +109,7 @@ class MarkdownRenderer:
     ) -> ReportMatrix:
         evidence_items = self._matrix_evidence_items(brief, debate, decision)
         return ReportMatrix(
-            source_manifest=self._source_manifest(evidence_items),
+            source_manifest=self._source_manifest(request, evidence_items),
             evidence_items=evidence_items,
             claim_records=self._claim_records(
                 evidence_items,
@@ -151,9 +151,12 @@ class MarkdownRenderer:
 
     def _source_manifest(
         self,
+        request: ReviewRequest,
         evidence_items: list[EvidenceItem],
     ) -> list[SourceManifestEntry]:
         by_id: dict[str, SourceManifestEntry] = {}
+        for source in request.source_manifest:
+            by_id.setdefault(source.source_id, source)
         for item in evidence_items:
             ref = item.source_ref
             by_id.setdefault(

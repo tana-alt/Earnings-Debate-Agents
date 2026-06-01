@@ -28,6 +28,17 @@ def test_reviews_api_fake_smoke_returns_markdown_report(monkeypatch):
 
     assert response.status_code == 200
     body = response.json()
+    assert body["status"] == "completed"
+    assert body["request_id"] == "req-api-contract-1"
+    assert body["quality_gate_result"]["status"] == "passed"
+    assert body["quality_gate_result"]["source_manifest_entries"] == 5
+    assert {source["source_id"] for source in body["claim_matrix"]["source_manifest"]} == {
+        "api:eps",
+        "api:free_cash_flow",
+        "filing:eps",
+        "filing:guidance",
+        "filing:risk",
+    }
     assert body["markdown_report"]
     for section in (
         "## Judge Rationale",

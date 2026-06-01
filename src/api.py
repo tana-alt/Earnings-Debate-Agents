@@ -13,7 +13,8 @@ from pydantic import ValidationError
 from .context_router import ContextRouter, ContextRouterError, ContextSourceScopeError
 from .llm import get_provider
 from .preprocessor import DocumentFileValidationError
-from .workflow import ReviewRequest, ReviewResponse, ReviewWorkflow
+from .workflow import MarkdownRenderer, ReviewRequest, ReviewResponse, ReviewWorkflow
+from .workflow_agents import WorkflowAgentError
 from .workflow_errors import WorkflowContractError, WorkflowErrorCategory
 from .workflow_models import (
     DryRunCheck,
@@ -21,6 +22,7 @@ from .workflow_models import (
     NormalizedReviewRequest,
     ReviewDryRunResponse,
     ReviewErrorResponse,
+    ReviewSuccessResponse,
     WorkflowErrorDetail,
 )
 from .workflow_validation import WorkflowValidationError
@@ -45,12 +47,12 @@ def get_workflow() -> ReviewWorkflow:
 
 @app.post(
     "/reviews",
-    response_model=ReviewResponse | ReviewDryRunResponse,
+    response_model=ReviewSuccessResponse | ReviewDryRunResponse,
     responses=REVIEW_ERROR_RESPONSES,
 )
 def create_review(
     payload: Any = Body(...),
-) -> ReviewResponse | ReviewDryRunResponse | JSONResponse:
+) -> ReviewSuccessResponse | ReviewDryRunResponse | JSONResponse:
     if not isinstance(payload, Mapping):
         return _error_response(
             422,
@@ -77,8 +79,14 @@ def create_review(
             field="document_sections",
         )
 
+    context_error = _execution_context_error_response(request)
+    if context_error is not None:
+        return context_error
+
     try:
-        return _resolve_workflow().run(_legacy_review_request(request))
+        legacy_request = _legacy_review_request(request)
+        result = _resolve_workflow().run(legacy_request)
+        return _success_response(legacy_request, result)
     except DocumentFileValidationError as exc:
         return _error_response(
             422,
@@ -94,6 +102,16 @@ def create_review(
             category,
             str(exc),
             field=exc.field,
+        )
+    except WorkflowAgentError as exc:
+        category = exc.category or WorkflowErrorCategory.LLM_OUTPUT_SCHEMA
+        return _error_response(
+            _status_for_category(category),
+            request,
+            category,
+            str(exc),
+            field=exc.field,
+            retryable=exc.retryable,
         )
     except WorkflowValidationError as exc:
         return _error_response(
@@ -143,10 +161,47 @@ def _legacy_review_request(request: NormalizedReviewRequest) -> ReviewRequest:
             *request.financial_metrics.source_refs,
             *(section.source_ref for section in request.document_sections),
         ],
+        source_manifest=request.source_manifest,
         include_markdown=request.include_markdown,
         purpose=request.purpose,
         is_investment_advice=request.is_investment_advice,
     )
+
+
+def _success_response(request: ReviewRequest, result: ReviewResponse) -> ReviewSuccessResponse:
+    claim_matrix = MarkdownRenderer().build_report_matrix(
+        request=request,
+        brief=result.analysis_brief,
+        debate=result.debate_result,
+        decision=result.judge_decision,
+    )
+    return ReviewSuccessResponse(
+        request_id=result.request_id,
+        ticker=result.ticker,
+        fiscal_period=result.fiscal_period,
+        steps=result.steps,
+        analysis_brief=result.analysis_brief,
+        claim_matrix=claim_matrix,
+        bull_case=result.bull_case,
+        bear_case=result.bear_case,
+        debate_result=result.debate_result,
+        judge_decision=result.judge_decision,
+        decision_uses=claim_matrix.decision_uses,
+        quality_gate_result=_quality_gate_result(claim_matrix),
+        markdown_report=result.markdown_report,
+        disclaimer=result.disclaimer,
+    )
+
+
+def _quality_gate_result(claim_matrix: Any) -> dict[str, Any]:
+    return {
+        "status": "passed",
+        "source_manifest_entries": len(claim_matrix.source_manifest),
+        "evidence_items": len(claim_matrix.evidence_items),
+        "claim_records": len(claim_matrix.claim_records),
+        "decision_uses": len(claim_matrix.decision_uses),
+        "missing_data_items": len(claim_matrix.missing_data_items),
+    }
 
 
 def _dry_run_response(request: NormalizedReviewRequest) -> ReviewDryRunResponse | JSONResponse:
@@ -227,6 +282,45 @@ def _dry_run_response(request: NormalizedReviewRequest) -> ReviewDryRunResponse 
         dry_run_status=DryRunStatus.PASSED,
         checks=checks,
     )
+
+
+def _execution_context_error_response(
+    request: NormalizedReviewRequest,
+) -> JSONResponse | None:
+    try:
+        budget_report = ContextRouter().check_budget(request)
+    except ContextSourceScopeError as exc:
+        return _error_response(
+            422,
+            request,
+            WorkflowErrorCategory.SOURCE_MANIFEST,
+            str(exc),
+        )
+    except ContextRouterError as exc:
+        return _error_response(
+            422,
+            request,
+            WorkflowErrorCategory.CONTEXT_BUDGET,
+            str(exc),
+        )
+    except Exception:
+        return _error_response(
+            500,
+            request,
+            WorkflowErrorCategory.INTERNAL_INVARIANT,
+            "Internal context validation failure.",
+        )
+
+    if not budget_report.within_budget:
+        return _error_response(
+            422,
+            request,
+            WorkflowErrorCategory.CONTEXT_BUDGET,
+            _budget_failure_message(budget_report.failures),
+            field="context_budget",
+        )
+
+    return None
 
 
 def _failed_dry_run_response(
@@ -334,6 +428,7 @@ def _error_response(
     message: str,
     *,
     field: str | None = None,
+    retryable: bool | None = None,
 ) -> JSONResponse:
     request_id, ticker, fiscal_period = _identity_fields(source)
     response = ReviewErrorResponse(
@@ -345,7 +440,7 @@ def _error_response(
                 category=category,
                 message=_truncate_message(message),
                 field=field,
-                retryable=_is_retryable(category),
+                retryable=_is_retryable(category) if retryable is None else retryable,
             )
         ],
     )

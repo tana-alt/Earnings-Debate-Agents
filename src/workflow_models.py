@@ -87,7 +87,7 @@ class JudgeTreatment(str, Enum):
 
 
 class ReviewStatus(str, Enum):
-    SUCCEEDED = "succeeded"
+    COMPLETED = "completed"
     FAILED = "failed"
     DRY_RUN = "dry_run"
 
@@ -447,6 +447,7 @@ class ReviewRequest(WorkflowModel):
     document_files: list[DocumentFile] = Field(default_factory=list, max_length=20)
     document_sections: list[DocumentSection] = Field(default_factory=list, max_length=200)
     source_refs: list[SourceRef] = Field(default_factory=list, max_length=100)
+    source_manifest: list[SourceManifestEntry] = Field(default_factory=list, max_length=200)
     include_markdown: bool = True
     purpose: Literal["earnings_review_not_investment_advice"] = (
         "earnings_review_not_investment_advice"
@@ -919,11 +920,25 @@ class DryRunCheck(WorkflowModel):
 
 
 class ReviewSuccessResponse(WorkflowModel):
-    status: Literal[ReviewStatus.SUCCEEDED] = ReviewStatus.SUCCEEDED
+    status: Literal[ReviewStatus.COMPLETED] = ReviewStatus.COMPLETED
     request_id: str | None = Field(default=None, max_length=80)
     ticker: str = Field(min_length=1, max_length=15)
     fiscal_period: str = Field(pattern=r"^\d{4}Q[1-4]$")
-    result: ReviewResponse
+    steps: list[StepStatus] = Field(min_length=1, max_length=20)
+    analysis_brief: AnalysisBrief
+    claim_matrix: ReportMatrix
+    bull_case: BullCase
+    bear_case: BearCase
+    debate_result: DebateResult
+    judge_decision: JudgeDecision
+    decision_uses: list[DecisionUse] = Field(default_factory=list, max_length=100)
+    quality_gate_result: dict[str, Any] = Field(default_factory=dict)
+    markdown_report: str = Field(min_length=1, max_length=20000)
+    disclaimer: str = Field(
+        default="This report is an earnings analysis artifact and is not investment advice.",
+        min_length=1,
+        max_length=500,
+    )
 
     @field_validator("ticker", mode="before")
     @classmethod
@@ -934,11 +949,13 @@ class ReviewSuccessResponse(WorkflowModel):
         return normalized
 
     @model_validator(mode="after")
-    def validate_result_identity(self) -> ReviewSuccessResponse:
-        if self.result.ticker != self.ticker:
-            raise ValueError("result.ticker must match response ticker")
-        if self.result.fiscal_period != self.fiscal_period:
-            raise ValueError("result.fiscal_period must match response fiscal_period")
+    def validate_nested_identity(self) -> ReviewSuccessResponse:
+        if self.analysis_brief.ticker != self.ticker:
+            raise ValueError("analysis_brief.ticker must match response ticker")
+        if self.analysis_brief.fiscal_period != self.fiscal_period:
+            raise ValueError("analysis_brief.fiscal_period must match response fiscal_period")
+        if self.decision_uses != self.claim_matrix.decision_uses:
+            raise ValueError("decision_uses must match claim_matrix.decision_uses")
         return self
 
 

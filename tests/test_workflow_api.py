@@ -498,7 +498,18 @@ def test_reviews_endpoint_delegates_to_workflow():
 
     assert response.status_code == 200
     body = response.json()
+    assert body["status"] == "completed"
     assert body["ticker"] == "NVDA"
+    assert body["quality_gate_result"]["status"] == "passed"
+    assert body["quality_gate_result"]["source_manifest_entries"] == 5
+    assert {source["source_id"] for source in body["claim_matrix"]["source_manifest"]} == {
+        "api:eps",
+        "api:free_cash_flow",
+        "filing:eps",
+        "filing:guidance",
+        "filing:risk",
+    }
+    assert body["decision_uses"] == body["claim_matrix"]["decision_uses"]
     assert body["judge_decision"]["verdict"] == "good"
     assert body["steps"][-1]["step"] == "markdown_renderer"
     assert "# Earnings Review: NVDA 2025Q3" in body["markdown_report"]

@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src import api
+from src.workflow_agents import AgentOutputValidationError
 from src.workflow_models import ReviewRequest
 from src.workflow_validation import WorkflowValidationError
 
@@ -269,6 +270,35 @@ def test_reviews_non_dry_run_rejects_missing_document_sections_before_workflow()
     assert "Traceback" not in body["errors"][0]["message"]
 
 
+def test_reviews_non_dry_run_budget_failure_happens_before_workflow():
+    def fail_workflow():
+        raise AssertionError("context budget failure should not resolve the workflow provider")
+
+    payload = normalized_review_payload(dry_run=False)
+    payload["context_budget"] = {
+        "max_input_tokens": 1,
+        "max_output_tokens": 1,
+        "max_total_tokens": 2,
+    }
+
+    api.app.dependency_overrides[api.get_workflow] = fail_workflow
+    try:
+        response = TestClient(api.app, raise_server_exceptions=False).post(
+            "/reviews",
+            json=payload,
+        )
+    finally:
+        api.app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["status"] == "failed"
+    assert body["errors"][0]["category"] == "context_budget"
+    assert body["errors"][0]["field"] == "context_budget"
+    assert body["errors"][0]["retryable"] is False
+    assert "context budget exceeded" in body["errors"][0]["message"]
+
+
 def test_reviews_workflow_validation_failure_uses_422_quality_gate_envelope():
     class FailingWorkflow:
         def run(self, request: ReviewRequest):
@@ -292,11 +322,40 @@ def test_reviews_workflow_validation_failure_uses_422_quality_gate_envelope():
     assert "Traceback" not in body["errors"][0]["message"]
 
 
+def test_reviews_agent_schema_failure_uses_structured_output_category():
+    class FailingWorkflow:
+        def run(self, request: ReviewRequest):
+            raise AgentOutputValidationError(
+                "JudgeAgent output failed schema_mismatch",
+                field="judge_decision.verdict",
+                retryable=False,
+            )
+
+    api.app.dependency_overrides[api.get_workflow] = lambda: FailingWorkflow()
+    try:
+        response = TestClient(api.app, raise_server_exceptions=False).post(
+            "/reviews",
+            json=normalized_review_payload(dry_run=False),
+        )
+    finally:
+        api.app.dependency_overrides.clear()
+
+    assert response.status_code == 500
+    body = response.json()
+    assert body["status"] == "failed"
+    assert body["errors"][0]["category"] == "llm_output_schema"
+    assert body["errors"][0]["field"] == "judge_decision.verdict"
+    assert body["errors"][0]["retryable"] is False
+    assert "Internal review workflow failure" not in body["errors"][0]["message"]
+
+
 def test_reviews_openapi_documents_stable_error_envelopes():
     response = TestClient(api.app).get("/openapi.json")
 
     assert response.status_code == 200
     responses = response.json()["paths"]["/reviews"]["post"]["responses"]
+    success_schema = json.dumps(responses["200"])
+    assert "ReviewSuccessResponse" in success_schema
     assert "422" in responses
     assert "500" in responses
     assert "ReviewErrorResponse" in json.dumps(responses["422"])
