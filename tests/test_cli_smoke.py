@@ -33,6 +33,11 @@ def test_cli_fake_smoke_writes_report_and_workflow_result(monkeypatch, tmp_path)
 
     assert workflow_result["ticker"] == "NVDA"
     assert workflow_result["fiscal_period"] == "2025Q3"
+    assert workflow_result["status"] == "completed"
+    assert "claim_matrix" in workflow_result
+    assert "metric:NVDA:2025Q3:free_cash_flow:derived" in {
+        source["source_id"] for source in workflow_result["claim_matrix"]["source_manifest"]
+    }
     assert workflow_result["judge_decision"]["verdict"] in {"good", "neutral", "bad"}
     for expected in (
         "NVDA",

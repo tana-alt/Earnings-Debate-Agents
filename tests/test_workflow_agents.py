@@ -549,6 +549,11 @@ def test_bull_and_bear_schema_requires_finding_coverage():
     assert bear.finding_coverage["cash_flow_risk"] == "opposing"
 
 
+def test_debate_and_judge_specs_route_expected_metrics_context():
+    for agent_class in (BullAgent, BearAgent, JudgeAgent):
+        assert "expected_metrics" in agent_class.spec.context_keys
+
+
 def test_bull_agent_rejects_missing_finding_coverage():
     agent = BullAgent(FakeLLM([bull_json(include_coverage=False)]), max_retries=0)
 
@@ -580,3 +585,4 @@ def test_judge_agent_returns_judge_decision_contract():
     assert isinstance(result, JudgeDecision)
     assert result.verdict.value == "neutral"
     assert "raw_filing" not in llm.calls[0]["user"]
+    assert "expected_metrics" in llm.calls[0]["user"]

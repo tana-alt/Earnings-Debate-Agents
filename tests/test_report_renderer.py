@@ -5,6 +5,8 @@ from src.workflow import MarkdownRenderer
 from src.workflow_models import (
     AgentRole,
     AnalysisBrief,
+    AvailabilityItem,
+    AvailabilityStatus,
     CashFlowRiskFinding,
     ClaimRecord,
     ClaimType,
@@ -324,6 +326,32 @@ def test_evidence_matrix_distinguishes_contract_fields():
     assert "Current quarter 2025Q3" in matrix_section
     assert "supported" in matrix_section
     assert "supporting" in matrix_section
+
+
+def test_quality_gates_list_data_quality_conflicts():
+    request, brief, debate, decision, matrix = renderer_inputs()
+    matrix = matrix.model_copy(
+        update={
+            "data_quality_flags": [
+                AvailabilityItem(
+                    key="conflict:sec_yfinance:revenue",
+                    status=AvailabilityStatus.CONFLICTING,
+                    reason="SEC revenue conflicts with yfinance revenue.",
+                    source_type=SourceType.FINANCIAL_API,
+                )
+            ]
+        }
+    )
+
+    markdown = ReportRenderer().render(
+        request=request,
+        brief=brief,
+        debate=debate,
+        decision=decision,
+        matrix=matrix,
+    )
+
+    assert "- Metric conflicts: listed" in section(markdown, "Data Quality Flags")
 
 
 def test_source_appendix_does_not_duplicate_unrelated_sections():

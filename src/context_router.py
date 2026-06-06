@@ -14,6 +14,7 @@ from typing import Any, Mapping
 
 from pydantic import BaseModel, Field
 
+from src.expected_metrics import expected_metric_context
 from src.workflow_models import (
     AgentRole,
     ContextBudget,
@@ -33,6 +34,7 @@ APPROX_TOKEN_COUNTER_NAME = "approx_json_chars_div_4_v1"
 ROLE_CONTEXT_KEYS: dict[AgentRole, tuple[str, ...]] = {
     AgentRole.EARNINGS_QUALITY: (
         "run_spec",
+        "expected_metrics",
         "earnings_quality_metrics",
         "earnings_quality_sections",
         "source_index",
@@ -40,6 +42,7 @@ ROLE_CONTEXT_KEYS: dict[AgentRole, tuple[str, ...]] = {
     ),
     AgentRole.CASH_FLOW_RISK: (
         "run_spec",
+        "expected_metrics",
         "cash_flow_risk_metrics",
         "cash_flow_risk_sections",
         "cash_conversion_inputs",
@@ -48,6 +51,7 @@ ROLE_CONTEXT_KEYS: dict[AgentRole, tuple[str, ...]] = {
     ),
     AgentRole.MANAGEMENT_INTENT: (
         "run_spec",
+        "expected_metrics",
         "financial_snapshot_minimal",
         "management_sections",
         "management_intent_sections",
@@ -59,6 +63,7 @@ ROLE_CONTEXT_KEYS: dict[AgentRole, tuple[str, ...]] = {
     ),
     AgentRole.GUIDANCE: (
         "run_spec",
+        "expected_metrics",
         "guidance_metrics",
         "guidance_consensus_deltas",
         "consensus_deltas",
@@ -71,6 +76,7 @@ ROLE_CONTEXT_KEYS: dict[AgentRole, tuple[str, ...]] = {
     ),
     AgentRole.BULL: (
         "run_spec",
+        "expected_metrics",
         "financial_snapshot_summary",
         "analysis_brief",
         "earnings_quality_finding",
@@ -84,6 +90,7 @@ ROLE_CONTEXT_KEYS: dict[AgentRole, tuple[str, ...]] = {
     ),
     AgentRole.BEAR: (
         "run_spec",
+        "expected_metrics",
         "financial_snapshot_summary",
         "analysis_brief",
         "earnings_quality_finding",
@@ -98,6 +105,7 @@ ROLE_CONTEXT_KEYS: dict[AgentRole, tuple[str, ...]] = {
     ),
     AgentRole.JUDGE: (
         "run_spec",
+        "expected_metrics",
         "financial_snapshot_summary",
         "analysis_brief",
         "bull_case",
@@ -338,6 +346,7 @@ class ContextRouter:
             AgentRole.EARNINGS_QUALITY: (
                 {
                     "run_spec": self._run_spec(request),
+                    "expected_metrics": expected_metric_context(AgentRole.EARNINGS_QUALITY),
                     "earnings_quality_metrics": metrics_json,
                     "earnings_quality_sections": earnings_quality_sections,
                     "analysis_config": self._analysis_config(),
@@ -353,6 +362,7 @@ class ContextRouter:
             AgentRole.CASH_FLOW_RISK: (
                 {
                     "run_spec": self._run_spec(request),
+                    "expected_metrics": expected_metric_context(AgentRole.CASH_FLOW_RISK),
                     "cash_flow_risk_metrics": metrics_json,
                     "cash_flow_risk_sections": cash_flow_risk_sections,
                     "cash_conversion_inputs": metrics_json,
@@ -369,6 +379,7 @@ class ContextRouter:
             AgentRole.MANAGEMENT_INTENT: (
                 {
                     "run_spec": self._run_spec(request),
+                    "expected_metrics": expected_metric_context(AgentRole.MANAGEMENT_INTENT),
                     "financial_snapshot_minimal": self._minimal_snapshot(metrics_json),
                     "management_sections": management_sections,
                     "management_intent_sections": management_intent_sections,
@@ -388,6 +399,7 @@ class ContextRouter:
             AgentRole.GUIDANCE: (
                 {
                     "run_spec": self._run_spec(request),
+                    "expected_metrics": expected_metric_context(AgentRole.GUIDANCE),
                     "guidance_metrics": guidance_inputs,
                     "guidance_consensus_deltas": guidance_deltas,
                     "consensus_deltas": guidance_deltas,
@@ -408,6 +420,7 @@ class ContextRouter:
             AgentRole.BULL: (
                 {
                     "run_spec": self._run_spec(request),
+                    "expected_metrics": expected_metric_context(AgentRole.BULL),
                     "financial_snapshot_summary": self._minimal_snapshot(metrics_json),
                 },
                 [],
@@ -415,6 +428,7 @@ class ContextRouter:
             AgentRole.BEAR: (
                 {
                     "run_spec": self._run_spec(request),
+                    "expected_metrics": expected_metric_context(AgentRole.BEAR),
                     "financial_snapshot_summary": self._minimal_snapshot(metrics_json),
                 },
                 [],
@@ -422,6 +436,7 @@ class ContextRouter:
             AgentRole.JUDGE: (
                 {
                     "run_spec": self._run_spec(request),
+                    "expected_metrics": expected_metric_context(AgentRole.JUDGE),
                     "financial_snapshot_summary": self._minimal_snapshot(metrics_json),
                 },
                 [],

@@ -1208,6 +1208,7 @@ class ReviewResponse(WorkflowModel):
     ticker: str = Field(min_length=1, max_length=15)
     fiscal_period: str = Field(pattern=r"^\d{4}Q[1-4]$")
     steps: list[StepStatus] = Field(min_length=1, max_length=20)
+    financial_metrics: FinancialMetrics | None = None
     analysis_brief: AnalysisBrief
     bull_case: BullCase
     bear_case: BearCase

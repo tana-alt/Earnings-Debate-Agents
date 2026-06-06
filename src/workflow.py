@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .context_router import ContextRouter
+from .expected_metrics import canonical_metric_availability, with_canonical_metric_availability
 from .llm import LLMProvider
 from .report_quality_guidance import validate_guidance_required
 from .report_quality_missing_data import apply_confidence_caps
@@ -47,6 +48,7 @@ from .workflow_models import (
     ReviewRequest,
     ReviewResponse,
     SourceManifestEntry,
+    SourceRef,
     SourceType,
     StepState,
     StepStatus,
@@ -59,9 +61,9 @@ from .workflow_validation import WorkflowValidationError, WorkflowValidationGate
 
 
 def _fetch_consensus(ticker: str, quarter: str, **kwargs):
-    from .preprocessor import fetch_consensus
+    from .preprocessor import fetch_financial_metrics
 
-    return fetch_consensus(ticker, quarter, **kwargs)
+    return fetch_financial_metrics(ticker, quarter, **kwargs)
 
 
 def _fetch_filing_html(url: str) -> str:
@@ -80,6 +82,36 @@ def _document_files_to_sections(document_files):
     from .preprocessor import document_files_to_sections
 
     return document_files_to_sections(document_files)
+
+
+def _source_manifest_entry_from_ref(source_ref: SourceRef) -> SourceManifestEntry:
+    return SourceManifestEntry(
+        source_id=source_ref.source_id,
+        source_type=source_ref.source_type,
+        document_id=source_ref.document_id,
+        title=source_ref.title,
+        url=source_ref.url,
+        section_id=source_ref.section_id,
+        metric_name=source_ref.metric_name,
+        page=source_ref.page,
+        line_range=source_ref.line_range,
+        reported_period=source_ref.reported_period,
+        as_of_date=source_ref.as_of_date,
+        provider=source_ref.provider,
+        provider_row_date=source_ref.provider_row_date,
+        provider_column_date=source_ref.provider_column_date,
+        period_role=source_ref.period_role,
+    )
+
+
+def _merge_source_manifest(
+    source_manifest: list[SourceManifestEntry],
+    source_refs: list[SourceRef],
+) -> list[SourceManifestEntry]:
+    by_id = {source.source_id: source for source in source_manifest}
+    for source_ref in source_refs:
+        by_id.setdefault(source_ref.source_id, _source_manifest_entry_from_ref(source_ref))
+    return list(by_id.values())
 
 
 class MarkdownRenderer:
@@ -163,31 +195,22 @@ class MarkdownRenderer:
         request: ReviewRequest,
         evidence_items: list[EvidenceItem],
     ) -> list[SourceManifestEntry]:
+        metric_source_refs = (
+            source_refs_from_financial_metrics(request.financial_metrics)
+            if request.financial_metrics is not None
+            else []
+        )
         if request.source_manifest:
-            return list(request.source_manifest)
+            return _merge_source_manifest(
+                list(request.source_manifest),
+                metric_source_refs,
+            )
 
         by_id: dict[str, SourceManifestEntry] = {}
-        for item in evidence_items:
-            ref = item.source_ref
+        for ref in [*(item.source_ref for item in evidence_items), *metric_source_refs]:
             by_id.setdefault(
                 ref.source_id,
-                SourceManifestEntry(
-                    source_id=ref.source_id,
-                    source_type=ref.source_type,
-                    document_id=ref.document_id,
-                    title=ref.title,
-                    url=ref.url,
-                    section_id=ref.section_id,
-                    metric_name=ref.metric_name,
-                    page=ref.page,
-                    line_range=ref.line_range,
-                    reported_period=ref.reported_period,
-                    as_of_date=ref.as_of_date,
-                    provider=ref.provider,
-                    provider_row_date=ref.provider_row_date,
-                    provider_column_date=ref.provider_column_date,
-                    period_role=ref.period_role,
-                ),
+                _source_manifest_entry_from_ref(ref),
             )
         return list(by_id.values())
 
@@ -284,7 +307,7 @@ class MarkdownRenderer:
 
     def confidence_cap_items(self, request: ReviewRequest) -> list[MissingDataItem]:
         metrics = request.financial_metrics
-        flags = metrics.availability if metrics is not None else []
+        flags = canonical_metric_availability(metrics) if metrics is not None else []
         items: list[MissingDataItem] = []
         for flag in flags:
             if flag.status in {AvailabilityStatus.AVAILABLE, AvailabilityStatus.COMPUTED}:
@@ -359,7 +382,8 @@ class ReviewWorkflow:
             WorkflowStep.DATA_INGESTION,
             lambda: self._ingest(request),
         )
-        context = self._build_agent_context(request, metrics, sections)
+        runtime_request = self._runtime_request(request, metrics)
+        context = self._build_agent_context(runtime_request, metrics, sections)
 
         financial_findings = self._record_step(
             steps,
@@ -380,7 +404,7 @@ class ReviewWorkflow:
             steps,
             WorkflowStep.EVIDENCE_AGGREGATION,
             lambda: self.validator.aggregate_evidence(
-                request,
+                runtime_request,
                 metrics,
                 sections,
                 financial_findings,
@@ -391,20 +415,19 @@ class ReviewWorkflow:
         bull_case, bear_case, debate = self._record_step(
             steps,
             WorkflowStep.DEBATE,
-            lambda: self.debate_runner.run(request, metrics, brief),
+            lambda: self.debate_runner.run(runtime_request, metrics, brief),
         )
 
         decision = self._record_step(
             steps,
             WorkflowStep.JUDGE,
-            lambda: self.judge_runner.run(request, metrics, brief, bull_case, bear_case),
+            lambda: self.judge_runner.run(runtime_request, metrics, brief, bull_case, bear_case),
         )
         decision = self.validator.validate_judge_decision(decision, brief)
-        cap_request = request.model_copy(update={"financial_metrics": metrics})
         decision = apply_confidence_caps(
             decision,
             brief,
-            missing_data_items=self.renderer.confidence_cap_items(cap_request),
+            missing_data_items=self.renderer.confidence_cap_items(runtime_request),
         )
         validate_numeric_grounding([*decision.positive_evidence, *decision.negative_evidence])
 
@@ -413,22 +436,23 @@ class ReviewWorkflow:
             WorkflowStep.MARKDOWN_RENDERER,
             lambda: (
                 self.renderer.render(
-                    request=request,
+                    request=runtime_request,
                     brief=brief,
                     debate=debate,
                     decision=decision,
                 )
-                if request.include_markdown
+                if runtime_request.include_markdown
                 else "Markdown rendering was disabled for this request."
             ),
         )
         self.validator.validate_no_investment_advice_text(markdown, "markdown_report")
 
         return ReviewResponse(
-            request_id=request.request_id,
-            ticker=request.ticker,
-            fiscal_period=request.fiscal_period,
+            request_id=runtime_request.request_id,
+            ticker=runtime_request.ticker,
+            fiscal_period=runtime_request.fiscal_period,
             steps=steps,
+            financial_metrics=metrics,
             analysis_brief=brief,
             bull_case=bull_case,
             bear_case=bear_case,
@@ -490,6 +514,20 @@ class ReviewWorkflow:
 
         return metrics, sections
 
+    def _runtime_request(self, request: ReviewRequest, metrics: FinancialMetrics) -> ReviewRequest:
+        source_manifest = list(request.source_manifest)
+        if source_manifest:
+            source_manifest = _merge_source_manifest(
+                source_manifest,
+                source_refs_from_financial_metrics(metrics),
+            )
+        return request.model_copy(
+            update={
+                "financial_metrics": metrics,
+                "source_manifest": source_manifest,
+            },
+        )
+
     def _normalize_metrics(self, metrics: FinancialMetrics) -> FinancialMetrics:
         payload = metrics.model_dump(exclude_none=True)
         if "eps_surprise_pct" not in payload:
@@ -503,7 +541,44 @@ class ReviewWorkflow:
         if "free_cash_flow" not in payload:
             if metrics.operating_cash_flow is not None and metrics.capex is not None:
                 payload["free_cash_flow"] = metrics.operating_cash_flow - abs(metrics.capex)
-        return FinancialMetrics.model_validate(payload)
+        normalized = FinancialMetrics.model_validate(payload)
+        return with_canonical_metric_availability(self._with_inferred_metric_values(normalized))
+
+    def _with_inferred_metric_values(self, metrics: FinancialMetrics) -> FinancialMetrics:
+        from .preprocessor import build_financial_metrics
+
+        inferred = build_financial_metrics(
+            ticker=metrics.ticker,
+            fiscal_period=metrics.fiscal_period,
+            target_earnings_date=metrics.target_earnings_date,
+            target_period_end_date=metrics.target_period_end_date,
+            prior_fiscal_period=metrics.prior_fiscal_period,
+            input_profile=metrics.input_profile,
+            eps=metrics.eps,
+            eps_consensus=metrics.eps_consensus,
+            eps_surprise_pct=metrics.eps_surprise_pct,
+            revenue=metrics.revenue,
+            revenue_consensus=metrics.revenue_consensus,
+            revenue_surprise_pct=metrics.revenue_surprise_pct,
+            operating_margin_pct=metrics.operating_margin_pct,
+            operating_cash_flow=metrics.operating_cash_flow,
+            free_cash_flow=metrics.free_cash_flow,
+            capex=metrics.capex,
+            guidance=metrics.guidance,
+            source_refs=list(metrics.source_refs),
+            availability=list(metrics.availability),
+            segment_metrics=list(metrics.segment_metrics),
+            unmapped_metrics=list(metrics.unmapped_metrics),
+        )
+        return inferred.model_copy(
+            update={
+                "currency": metrics.currency,
+                "guidance_metrics": metrics.guidance_metrics,
+                "guidance_deltas": metrics.guidance_deltas,
+                "presentation_metric_candidates": metrics.presentation_metric_candidates,
+                "metric_conflicts": metrics.metric_conflicts,
+            },
+        )
 
     def _calculate_surprise_pct(
         self,
@@ -522,6 +597,7 @@ class ReviewWorkflow:
             target_period_end_date=request.target_period_end_date,
             prior_fiscal_period=request.prior_fiscal_period,
             input_profile=request.input_profile,
+            use_sec=request.use_sec,
         )
 
     def _build_agent_context(

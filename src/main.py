@@ -103,11 +103,11 @@ def run(
     if api_url == "local" or (
         api_url == "http://127.0.0.1:8000" and os.getenv("LLM_PROVIDER", "").lower() == "fake"
     ):
-        body = (
-            ReviewWorkflow(get_provider())
-            .run(_review_request_from_normalized(normalized_request))
-            .model_dump(mode="json")
-        )
+        from .api import _success_response
+
+        review_request = _review_request_from_normalized(normalized_request)
+        workflow_result = ReviewWorkflow(get_provider()).run(review_request)
+        body = _success_response(review_request, workflow_result).model_dump(mode="json")
     else:
         response = requests.post(f"{api_url.rstrip('/')}/reviews", json=payload, timeout=300)
         response.raise_for_status()

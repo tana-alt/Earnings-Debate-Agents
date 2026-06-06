@@ -167,6 +167,7 @@ def test_router_limits_each_role_to_allowed_context_keys_and_registered_sources(
         assert role_context.context_keys == sorted(role_context.context)
         assert routed_source_ids(role_context) == role_context.routed_source_ids
         assert set(role_context.routed_source_ids) <= request.registered_source_ids
+        assert "expected_metrics" in role_context.context
 
     assert "filing:eps" in routed.by_role[AgentRole.EARNINGS_QUALITY].routed_source_ids
     assert "filing:guidance" not in routed.by_role[AgentRole.EARNINGS_QUALITY].routed_source_ids

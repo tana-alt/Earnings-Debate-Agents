@@ -19,6 +19,7 @@ from typing import Any, Literal, Mapping, NoReturn
 from pydantic import BaseModel, field_validator
 
 from . import workflow_models as _workflow_models
+from .expected_metrics import expected_metric_context
 from .llm import LLMProvider
 from .prompt_loader import build_system_prompt, resolve_skill_target
 from .structured import StructuredOutputError, parse_model
@@ -89,6 +90,16 @@ REQUIRED_FINDING_COVERAGE_KEYS = {
     "cash_flow_risk",
     "management_intent",
     "guidance",
+}
+
+EXPECTED_METRIC_ROLE_BY_PUBLIC_ROLE: dict[str, _workflow_models.AgentRole] = {
+    "EarningsQualityAnalyst": _workflow_models.AgentRole.EARNINGS_QUALITY,
+    "CashFlowRiskAnalyst": _workflow_models.AgentRole.CASH_FLOW_RISK,
+    "ManagementIntentAnalyst": _workflow_models.AgentRole.MANAGEMENT_INTENT,
+    "GuidanceAnalyst": _workflow_models.AgentRole.GUIDANCE,
+    "BullAgent": _workflow_models.AgentRole.BULL,
+    "BearAgent": _workflow_models.AgentRole.BEAR,
+    "JudgeAgent": _workflow_models.AgentRole.JUDGE,
 }
 
 
@@ -318,11 +329,20 @@ class WorkflowAgent:
         self._raise_repair_exhausted(last_error)
 
     def _select_context(self, context: Mapping[str, Any]) -> dict[str, Any]:
+        enriched_context = self._with_expected_metric_context(context)
         return {
-            key: context[key]
+            key: enriched_context[key]
             for key in self.spec.context_keys
-            if key in context and context[key] is not None
+            if key in enriched_context and enriched_context[key] is not None
         }
+
+    def _with_expected_metric_context(self, context: Mapping[str, Any]) -> Mapping[str, Any]:
+        if "expected_metrics" not in self.spec.context_keys or "expected_metrics" in context:
+            return context
+        role = EXPECTED_METRIC_ROLE_BY_PUBLIC_ROLE.get(self.spec.public_role)
+        if role is None:
+            return context
+        return {**context, "expected_metrics": expected_metric_context(role)}
 
     def _build_user_prompt(
         self,
@@ -456,6 +476,7 @@ class EarningsQualityAnalyst(WorkflowAgent):
         output_model=EarningsQualityFinding,
         context_keys=(
             "run_spec",
+            "expected_metrics",
             "earnings_quality_metrics",
             "earnings_quality_sections",
             "source_index",
@@ -480,6 +501,7 @@ class CashFlowRiskAnalyst(WorkflowAgent):
         output_model=CashFlowRiskFinding,
         context_keys=(
             "run_spec",
+            "expected_metrics",
             "cash_flow_risk_metrics",
             "cash_flow_risk_sections",
             "cash_conversion_inputs",
@@ -513,6 +535,7 @@ class ManagementIntentAnalyst(WorkflowAgent):
         output_model=ManagementIntentFinding,
         context_keys=(
             "run_spec",
+            "expected_metrics",
             "financial_snapshot_minimal",
             "management_sections",
             "management_intent_sections",
@@ -538,6 +561,7 @@ class GuidanceAnalyst(WorkflowAgent):
         output_model=GuidanceFinding,
         context_keys=(
             "run_spec",
+            "expected_metrics",
             "guidance_metrics",
             "guidance_consensus_deltas",
             "consensus_deltas",
@@ -564,6 +588,7 @@ class BullAgent(WorkflowAgent):
         output_model=BullCase,
         context_keys=(
             "run_spec",
+            "expected_metrics",
             "financial_snapshot_summary",
             "analysis_brief",
             "earnings_quality_finding",
@@ -595,6 +620,7 @@ class BearAgent(WorkflowAgent):
         output_model=BearCase,
         context_keys=(
             "run_spec",
+            "expected_metrics",
             "financial_snapshot_summary",
             "analysis_brief",
             "earnings_quality_finding",
@@ -627,6 +653,7 @@ class JudgeAgent(WorkflowAgent):
         output_model=FinalVerdict,
         context_keys=(
             "run_spec",
+            "expected_metrics",
             "financial_snapshot_summary",
             "analysis_brief",
             "bull_case",

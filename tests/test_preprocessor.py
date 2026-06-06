@@ -16,6 +16,7 @@ from src.workflow_models import (
     AvailabilityStatus,
     DocumentFile,
     DocumentSection,
+    MetricPeriodRole,
     SourceRef,
     SourceType,
 )
@@ -208,8 +209,8 @@ def test_fetch_consensus_uses_yfinance_revenue_alias(monkeypatch):
         "revenue",
         "operating_cash_flow",
         "capex",
-        "free_cash_flow",
     }
+    assert "free_cash_flow" not in {ref.metric_name for ref in metrics.source_refs}
     assert metrics.derived_metrics
     assert metrics.derived_metrics[0].component_metric_ids == [
         "metric:NVDA:2025Q3:operating_cash_flow",
@@ -219,6 +220,43 @@ def test_fetch_consensus_uses_yfinance_revenue_alias(monkeypatch):
         "operating_cash_flow",
         "capex",
     }
+
+
+def test_fetch_consensus_accepts_yfinance_period_column_within_fifteen_days(monkeypatch):
+    from src.preprocessor import fetch_consensus
+
+    class FakeTicker:
+        earnings_dates = pd.DataFrame(
+            [{"Reported EPS": 0.81, "EPS Estimate": 0.75, "Surprise(%)": 8.0}],
+            index=pd.to_datetime(["2025-08-28"]),
+        )
+        quarterly_financials = pd.DataFrame(
+            [[123_000.0]],
+            index=["Operating Revenue"],
+            columns=pd.to_datetime(["2025-08-05"]),
+        )
+        quarterly_cashflow = pd.DataFrame(
+            [[20_000.0], [-5_000.0]],
+            index=["OperatingCashFlow", "Capital Expenditure"],
+            columns=pd.to_datetime(["2025-08-05"]),
+        )
+
+        def __init__(self, ticker):
+            self.ticker = ticker
+
+    monkeypatch.setattr("src.preprocessor.yf.Ticker", FakeTicker)
+
+    metrics = fetch_consensus(
+        "nvda",
+        "2025Q3",
+        target_earnings_date=date(2025, 8, 28),
+        target_period_end_date=date(2025, 7, 31),
+    )
+
+    assert metrics.revenue == 123_000.0
+    assert metrics.operating_cash_flow == 20_000.0
+    assert metrics.capex == -5_000.0
+    assert metrics.free_cash_flow == 15_000.0
 
 
 def test_build_normalized_review_request_registers_derived_metric_source_refs():
@@ -286,6 +324,95 @@ def test_fetch_consensus_without_target_dates_does_not_use_latest_yfinance_row(m
     assert metrics.operating_cash_flow is None
     assert metrics.availability
     assert {item.status for item in metrics.availability} >= {AvailabilityStatus.PERIOD_UNVERIFIED}
+
+
+def test_fetch_financial_metrics_uses_sec_p0_to_fill_canonical_gaps(monkeypatch):
+    from src.preprocessor import fetch_financial_metrics
+
+    monkeypatch.setattr(
+        "src.preprocessor.fetch_consensus",
+        lambda *args, **kwargs: build_financial_metrics(
+            ticker="NVDA",
+            fiscal_period="2025Q3",
+            eps=0.81,
+            eps_consensus=0.75,
+            free_cash_flow=999,
+            source_refs=[
+                SourceRef(
+                    source_id="financial_api:NVDA:2025Q3:yfinance:eps",
+                    source_type=SourceType.FINANCIAL_API,
+                    metric_name="eps",
+                    reported_period="2025Q3",
+                    provider="yfinance",
+                    period_role=MetricPeriodRole.ACTUAL,
+                )
+            ],
+        ),
+    )
+    monkeypatch.setattr(
+        "src.sec_company_facts.build_sec_company_facts_metrics",
+        lambda *args, **kwargs: build_financial_metrics(
+            ticker="NVDA",
+            fiscal_period="2025Q3",
+            revenue=35_000_000_000,
+            operating_cash_flow=15_000_000_000,
+            capex=-3_000_000_000,
+            source_refs=[
+                SourceRef(
+                    source_id="financial_api:NVDA:2025Q3:sec:revenue",
+                    source_type=SourceType.FINANCIAL_API,
+                    metric_name="revenue",
+                    reported_period="2025Q3",
+                    provider="sec_company_facts",
+                    period_role=MetricPeriodRole.ACTUAL,
+                ),
+                SourceRef(
+                    source_id="financial_api:NVDA:2025Q3:sec:operating_cash_flow",
+                    source_type=SourceType.FINANCIAL_API,
+                    metric_name="operating_cash_flow",
+                    reported_period="2025Q3",
+                    provider="sec_company_facts",
+                    period_role=MetricPeriodRole.ACTUAL,
+                ),
+                SourceRef(
+                    source_id="financial_api:NVDA:2025Q3:sec:capex",
+                    source_type=SourceType.FINANCIAL_API,
+                    metric_name="capex",
+                    reported_period="2025Q3",
+                    provider="sec_company_facts",
+                    period_role=MetricPeriodRole.ACTUAL,
+                ),
+            ],
+        ),
+    )
+
+    metrics = fetch_financial_metrics(
+        "NVDA",
+        "2025Q3",
+        target_period_end_date=date(2025, 10, 31),
+    )
+
+    assert metrics.revenue == 35_000_000_000
+    assert metrics.operating_cash_flow == 15_000_000_000
+    assert metrics.capex == -3_000_000_000
+    assert metrics.free_cash_flow == 12_000_000_000
+    availability = {item.key: item.status for item in metrics.availability}
+    assert {
+        ("revenue", AvailabilityStatus.AVAILABLE),
+        ("operating_cash_flow", AvailabilityStatus.AVAILABLE),
+        ("capex", AvailabilityStatus.AVAILABLE),
+        ("free_cash_flow", AvailabilityStatus.AVAILABLE),
+    }.issubset(set(availability.items()))
+    assert {ref.provider for ref in metrics.source_refs if ref.metric_name == "revenue"} == {
+        "sec_company_facts"
+    }
+    assert not [
+        ref
+        for ref in metrics.source_refs
+        if ref.metric_name == "free_cash_flow" and ref.provider == "yfinance"
+    ]
+    assert metrics.derived_metrics
+    assert metrics.derived_metrics[0].metric_name == "free_cash_flow"
 
 
 def test_build_normalized_review_request_fetches_sec_when_presentation_sections_exist(

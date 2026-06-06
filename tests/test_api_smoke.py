@@ -31,17 +31,20 @@ def test_reviews_api_fake_smoke_returns_markdown_report(monkeypatch):
     assert body["status"] == "completed"
     assert body["request_id"] == "req-api-contract-1"
     assert body["quality_gate_result"]["status"] == "passed"
-    assert body["quality_gate_result"]["source_manifest_entries"] == 5
+    assert body["quality_gate_result"]["source_manifest_entries"] == 8
     assert {source["source_id"] for source in body["claim_matrix"]["source_manifest"]} == {
-        "api:eps",
-        "api:free_cash_flow",
+        "financial_api:NVDA:2025Q3:yfinance:eps",
+        "financial_api:NVDA:2025Q3:sec:revenue",
+        "financial_api:NVDA:2025Q3:sec:operating_cash_flow",
+        "financial_api:NVDA:2025Q3:sec:capex",
+        "metric:NVDA:2025Q3:free_cash_flow:derived",
         "filing:eps",
         "filing:guidance",
         "filing:risk",
     }
     assert body["markdown_report"]
-    assert body["markdown_report"].count("api:eps") == 1
-    assert body["markdown_report"].count("api:free_cash_flow") == 1
+    assert body["markdown_report"].count("financial_api:NVDA:2025Q3:yfinance:eps") == 1
+    assert body["markdown_report"].count("metric:NVDA:2025Q3:free_cash_flow:derived") == 1
     for section in (
         "## Judge Rationale",
         "## Evidence Matrix",

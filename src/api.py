@@ -175,8 +175,11 @@ def _legacy_review_request(request: NormalizedReviewRequest) -> ReviewRequest:
 
 
 def _success_response(request: ReviewRequest, result: ReviewResponse) -> ReviewSuccessResponse:
+    matrix_request = request
+    if result.financial_metrics is not None:
+        matrix_request = request.model_copy(update={"financial_metrics": result.financial_metrics})
     claim_matrix = MarkdownRenderer().build_report_matrix(
-        request=request,
+        request=matrix_request,
         brief=result.analysis_brief,
         debate=result.debate_result,
         decision=result.judge_decision,

@@ -8,6 +8,7 @@ from typing import Any, cast
 
 from pydantic import BaseModel
 
+from .expected_metrics import expected_metric_context
 from .llm import LLMProvider
 from .workflow_agents import BearAgent, BullAgent, JudgeAgent
 from .workflow_models import (
@@ -27,6 +28,9 @@ AGENT_ROLE_BY_PUBLIC_ROLE: dict[str, AgentRole] = {
     "CashFlowRiskAnalyst": AgentRole.CASH_FLOW_RISK,
     "ManagementIntentAnalyst": AgentRole.MANAGEMENT_INTENT,
     "GuidanceAnalyst": AgentRole.GUIDANCE,
+    "BullAgent": AgentRole.BULL,
+    "BearAgent": AgentRole.BEAR,
+    "JudgeAgent": AgentRole.JUDGE,
 }
 
 
@@ -53,13 +57,16 @@ class AgentRuntime:
         agent_class: type,
         context: dict[str, Any] | Mapping[AgentRole, dict[str, Any]],
     ) -> dict[str, Any]:
+        public_role = str(getattr(getattr(agent_class, "spec", None), "public_role", ""))
+        role = AGENT_ROLE_BY_PUBLIC_ROLE.get(public_role)
         if self._is_role_context_map(context):
-            public_role = str(getattr(getattr(agent_class, "spec", None), "public_role", ""))
-            role = AGENT_ROLE_BY_PUBLIC_ROLE.get(public_role)
             if role is None:
                 raise KeyError(f"unsupported routed agent role: {public_role}")
             return context[role]
-        return cast(dict[str, Any], context)
+        flat_context = cast(dict[str, Any], context)
+        if role is None or "expected_metrics" in flat_context:
+            return flat_context
+        return {**flat_context, "expected_metrics": expected_metric_context(role)}
 
     def _is_role_context_map(
         self,

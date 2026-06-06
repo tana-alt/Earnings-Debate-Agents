@@ -362,7 +362,14 @@ class ReportRenderer:
             self._enum_value(item.fact_check_status) == "contradicted"
             for item in matrix.evidence_items
         )
-        return "listed" if has_conflict_item or has_contradicted_evidence else "none"
+        has_data_quality_conflict = any(
+            item.status is AvailabilityStatus.CONFLICTING for item in matrix.data_quality_flags
+        )
+        return (
+            "listed"
+            if has_conflict_item or has_contradicted_evidence or has_data_quality_conflict
+            else "none"
+        )
 
     def _guidance_delta_status(self, matrix: ReportMatrix) -> str:
         text = " ".join(

@@ -44,6 +44,8 @@ from .workflow_models import (
 
 log = structlog.get_logger()
 
+PROVIDER_PERIOD_END_TOLERANCE_DAYS = 15
+
 
 SECTION_PATTERNS = {
     "revenue": re.compile(r"(net\s+revenue|total\s+revenue|net\s+sales)", re.I),
@@ -329,13 +331,14 @@ def _financial_metrics_from_payload(
     input_profile: InputProfile = InputProfile.YFINANCE_SEC_PRESENTATION_TAGGED,
 ) -> FinancialMetrics:
     if data.get("financial_metrics") is None:
-        return fetch_consensus(
+        return fetch_financial_metrics(
             ticker,
             fiscal_period,
             target_earnings_date=target_earnings_date,
             target_period_end_date=target_period_end_date,
             prior_fiscal_period=prior_fiscal_period,
             input_profile=input_profile,
+            use_sec=bool(data.get("use_sec", True)),
         )
 
     metrics = FinancialMetrics.model_validate(data["financial_metrics"])
@@ -584,12 +587,18 @@ def _target_metric_value(
 
     target_column = None
     target_column_date = None
+    target_delta_days: int | None = None
     for column in getattr(frame, "columns", []):
         column_date = _provider_date(column)
-        if column_date == target_period_end_date:
+        if column_date is None:
+            continue
+        delta_days = abs((column_date - target_period_end_date).days)
+        if delta_days > PROVIDER_PERIOD_END_TOLERANCE_DAYS:
+            continue
+        if target_delta_days is None or delta_days < target_delta_days:
             target_column = column
             target_column_date = column_date
-            break
+            target_delta_days = delta_days
     if target_column is None:
         return None, None
 
@@ -682,8 +691,13 @@ def build_financial_metrics(
         eps_surprise_pct = calculate_surprise_pct(eps, eps_consensus)
     if revenue_surprise_pct is None:
         revenue_surprise_pct = calculate_surprise_pct(revenue, revenue_consensus)
+    if capex is not None:
+        capex = -abs(capex)
     if operating_cash_flow is not None and capex is not None:
         free_cash_flow = operating_cash_flow - abs(capex)
+        component_metric_names = {ref.metric_name for ref in source_refs}
+        if {"operating_cash_flow", "capex"}.issubset(component_metric_names):
+            source_refs = [ref for ref in source_refs if ref.metric_name != "free_cash_flow"]
     canonical_metrics = _canonical_metric_values(
         ticker=ticker,
         fiscal_period=fiscal_period,
@@ -1024,12 +1038,15 @@ def fetch_consensus(
             "free_cash_flow",
             target_period_end_date,
         )
+        derive_free_cash_flow = operating_cash_flow is not None and capex is not None
         cashflow_values = {
             "operating_cash_flow": (operating_cash_flow, operating_cash_flow_date),
             "capex": (capex, capex_date),
             "free_cash_flow": (free_cash_flow, free_cash_flow_date),
         }
         for metric_name, (value, provider_column_date) in cashflow_values.items():
+            if derive_free_cash_flow and metric_name == "free_cash_flow":
+                continue
             if value is not None:
                 source_refs.append(
                     _financial_source_ref(
@@ -1082,3 +1099,154 @@ def fetch_consensus(
         source_refs=source_refs,
         availability=availability,
     )
+
+
+def fetch_financial_metrics(
+    ticker: str,
+    fiscal_period: str,
+    *,
+    target_earnings_date: date | None = None,
+    target_period_end_date: date | None = None,
+    prior_fiscal_period: str | None = None,
+    input_profile: InputProfile = InputProfile.YFINANCE_SEC_PRESENTATION_TAGGED,
+    use_sec: bool = True,
+) -> FinancialMetrics:
+    """Fetch and reconcile canonical financial metrics from yfinance and SEC."""
+
+    from .expected_metrics import with_canonical_metric_availability
+    from .sec_company_facts import build_sec_company_facts_metrics
+
+    yfinance_metrics = fetch_consensus(
+        ticker,
+        fiscal_period,
+        target_earnings_date=target_earnings_date,
+        target_period_end_date=target_period_end_date,
+        prior_fiscal_period=prior_fiscal_period,
+        input_profile=input_profile,
+    )
+    sec_metrics: FinancialMetrics | None = None
+    if use_sec and target_period_end_date is not None:
+        try:
+            sec_metrics = build_sec_company_facts_metrics(
+                ticker,
+                fiscal_period,
+                target_period_end_date=target_period_end_date,
+            )
+        except Exception as exc:
+            log.warning("sec.company_facts_fetch_failed", ticker=ticker, error=str(exc))
+
+    merged = _merge_financial_metric_sources(yfinance_metrics, sec_metrics)
+    return with_canonical_metric_availability(merged)
+
+
+def _merge_financial_metric_sources(
+    yfinance_metrics: FinancialMetrics,
+    sec_metrics: FinancialMetrics | None,
+) -> FinancialMetrics:
+    if sec_metrics is None:
+        from .expected_metrics import with_canonical_metric_availability
+
+        return with_canonical_metric_availability(yfinance_metrics)
+
+    updates: dict[str, Any] = {}
+    selected_refs: list[SourceRef] = []
+    conflict_items: list[AvailabilityItem] = []
+    sec_p0_metrics = {"revenue", "operating_cash_flow", "capex"}
+
+    yfinance_refs_by_metric = {
+        ref.metric_name: ref for ref in yfinance_metrics.source_refs if ref.metric_name
+    }
+    sec_refs_by_metric = {
+        ref.metric_name: ref for ref in sec_metrics.source_refs if ref.metric_name
+    }
+
+    for metric_name in ("revenue", "operating_cash_flow", "capex"):
+        yfinance_value = getattr(yfinance_metrics, metric_name)
+        sec_value = getattr(sec_metrics, metric_name)
+        if sec_value is not None:
+            updates[metric_name] = sec_value
+            if sec_refs_by_metric.get(metric_name) is not None:
+                selected_refs.append(sec_refs_by_metric[metric_name])
+            if yfinance_value is not None and _metric_conflicts(
+                metric_name,
+                float(yfinance_value),
+                float(sec_value),
+            ):
+                conflict_items.append(
+                    AvailabilityItem(
+                        key=f"conflict:sec_yfinance:{metric_name}",
+                        status=AvailabilityStatus.CONFLICTING,
+                        reason=(
+                            f"SEC Company Facts {metric_name} conflicts with "
+                            f"yfinance {metric_name}."
+                        ),
+                        source_type=SourceType.FINANCIAL_API,
+                    )
+                )
+        elif yfinance_value is not None:
+            updates[metric_name] = yfinance_value
+            if yfinance_refs_by_metric.get(metric_name) is not None:
+                selected_refs.append(yfinance_refs_by_metric[metric_name])
+
+    for metric_name in ("eps", "eps_consensus", "revenue_consensus"):
+        value = getattr(yfinance_metrics, metric_name)
+        if value is not None:
+            updates[metric_name] = value
+            if yfinance_refs_by_metric.get(metric_name) is not None:
+                selected_refs.append(yfinance_refs_by_metric[metric_name])
+
+    if yfinance_metrics.guidance is not None:
+        updates["guidance"] = yfinance_metrics.guidance
+    if yfinance_metrics.operating_margin_pct is not None:
+        updates["operating_margin_pct"] = yfinance_metrics.operating_margin_pct
+        if yfinance_refs_by_metric.get("operating_margin_pct") is not None:
+            selected_refs.append(yfinance_refs_by_metric["operating_margin_pct"])
+
+    sec_fcf_components_available = (
+        sec_metrics.operating_cash_flow is not None and sec_metrics.capex is not None
+    )
+    for ref in yfinance_metrics.source_refs:
+        if sec_fcf_components_available and ref.metric_name == "free_cash_flow":
+            continue
+        if ref.metric_name not in sec_p0_metrics and ref not in selected_refs:
+            selected_refs.append(ref)
+    for ref in sec_metrics.source_refs:
+        if ref.metric_name in sec_p0_metrics and ref not in selected_refs:
+            selected_refs.append(ref)
+
+    availability = [
+        *yfinance_metrics.availability,
+        *(
+            item
+            for item in sec_metrics.availability
+            if item.status
+            in {
+                AvailabilityStatus.OPTIONAL_MISSING,
+                AvailabilityStatus.PERIOD_UNVERIFIED,
+                AvailabilityStatus.UNAVAILABLE,
+            }
+        ),
+        *conflict_items,
+    ]
+    return build_financial_metrics(
+        ticker=yfinance_metrics.ticker,
+        fiscal_period=yfinance_metrics.fiscal_period,
+        target_earnings_date=yfinance_metrics.target_earnings_date,
+        target_period_end_date=yfinance_metrics.target_period_end_date,
+        prior_fiscal_period=yfinance_metrics.prior_fiscal_period,
+        input_profile=yfinance_metrics.input_profile,
+        source_refs=selected_refs,
+        availability=availability,
+        segment_metrics=[*yfinance_metrics.segment_metrics, *sec_metrics.segment_metrics],
+        unmapped_metrics=[*yfinance_metrics.unmapped_metrics, *sec_metrics.unmapped_metrics],
+        **updates,
+    )
+
+
+def _metric_conflicts(metric_name: str, left: float, right: float) -> bool:
+    left_cmp = abs(left) if metric_name == "capex" else left
+    right_cmp = abs(right) if metric_name == "capex" else right
+    denominator = max(abs(right_cmp), 1.0)
+    threshold = 0.01 if metric_name == "revenue" else 0.03
+    floor = 50_000_000 if metric_name != "capex" else 25_000_000
+    return abs(left_cmp - right_cmp) > max(floor, denominator * threshold)
