@@ -17,6 +17,7 @@ from src.workflow_models import (
     SourceRef,
     SourceType,
 )
+from tests.test_api_contract import normalized_review_payload
 
 
 def financial_ref(source_id: str, metric_name: str) -> SourceRef:
@@ -35,6 +36,17 @@ def document_ref(source_id: str, section_id: str) -> SourceRef:
         document_id="10q-2025q3",
         section_id=section_id,
         page=3,
+        reported_period="2025Q3",
+    )
+
+
+def presentation_ref(source_id: str, section_id: str, page: int) -> SourceRef:
+    return SourceRef(
+        source_id=source_id,
+        source_type=SourceType.EARNINGS_PRESENTATION,
+        document_id="deck-2025q3",
+        section_id=section_id,
+        page=page,
         reported_period="2025Q3",
     )
 
@@ -61,12 +73,35 @@ def manifest_entry(source_id: str, section_id: str | None = None) -> SourceManif
     )
 
 
+def presentation_manifest_entry(source_id: str, section_id: str, page: int) -> SourceManifestEntry:
+    return SourceManifestEntry(
+        source_id=source_id,
+        source_type=SourceType.EARNINGS_PRESENTATION,
+        title=f"{section_id} presentation page",
+        document_id="deck-2025q3",
+        section_id=section_id,
+        page=page,
+        reported_period="2025Q3",
+    )
+
+
 def section(section_id: str, heading: str, text: str) -> DocumentSection:
     return DocumentSection(
         section_id=section_id,
         source_ref=document_ref(f"filing:{section_id}", section_id),
         heading=heading,
         text=text,
+    )
+
+
+def presentation_section(section_id: str, heading: str, text: str, page: int) -> DocumentSection:
+    return DocumentSection(
+        section_id=section_id,
+        source_ref=presentation_ref(f"presentation:{section_id}", section_id, page),
+        heading=heading,
+        text=text,
+        start_page=page,
+        end_page=page,
     )
 
 
@@ -133,15 +168,91 @@ def test_router_limits_each_role_to_allowed_context_keys_and_registered_sources(
         assert role_context.context_keys == sorted(role_context.context)
         assert routed_source_ids(role_context) == role_context.routed_source_ids
         assert set(role_context.routed_source_ids) <= request.registered_source_ids
+        assert "expected_metrics" in role_context.context
 
     assert "filing:eps" in routed.by_role[AgentRole.EARNINGS_QUALITY].routed_source_ids
     assert "filing:guidance" not in routed.by_role[AgentRole.EARNINGS_QUALITY].routed_source_ids
     assert "filing:risk" in routed.by_role[AgentRole.CASH_FLOW_RISK].routed_source_ids
     assert "filing:guidance" in routed.by_role[AgentRole.GUIDANCE].routed_source_ids
-    assert "filing:risk" in routed.by_role[AgentRole.GUIDANCE].routed_source_ids
+    assert "filing:risk" not in routed.by_role[AgentRole.GUIDANCE].routed_source_ids
     assert "source_index" not in routed.by_role[AgentRole.BULL].context
     assert "source_index" not in routed.by_role[AgentRole.BEAR].context
     assert "source_index" not in routed.by_role[AgentRole.JUDGE].context
+
+
+def test_router_uses_body_tags_for_generic_presentation_headings():
+    request = normalized_request()
+    request = request.model_copy(
+        update={
+            "document_sections": [
+                presentation_section(
+                    "page-5",
+                    "Page 5",
+                    "Management guidance and outlook assume durable demand and supply improvement.",
+                    5,
+                )
+            ],
+            "source_manifest": [
+                manifest_entry("api:eps"),
+                manifest_entry("api:free_cash_flow"),
+                presentation_manifest_entry("presentation:page-5", "page-5", 5),
+            ],
+        }
+    )
+
+    routed = ContextRouter().route(request)
+
+    assert "presentation:page-5" in routed.by_role[AgentRole.GUIDANCE].routed_source_ids
+    assert "presentation:page-5" in routed.by_role[AgentRole.MANAGEMENT_INTENT].routed_source_ids
+    assert "presentation:page-5" not in routed.by_role[AgentRole.EARNINGS_QUALITY].routed_source_ids
+    guidance_section = routed.by_role[AgentRole.GUIDANCE].context["guidance_sections"][0]
+    assert set(guidance_section["presentation_tags"]) >= {
+        "guidance",
+        "outlook",
+        "assumptions",
+        "management",
+        "demand",
+        "supply",
+    }
+
+
+def test_router_guidance_deltas_are_not_full_financial_metrics_aliases():
+    request = normalized_request()
+
+    routed = ContextRouter().route(request)
+    guidance_context = routed.by_role[AgentRole.GUIDANCE].context
+
+    assert guidance_context["guidance_consensus_deltas"] == []
+    assert guidance_context["consensus_deltas"] == []
+    assert guidance_context["guidance_metrics"]["company_guidance"]
+    assert "ticker" not in guidance_context["guidance_consensus_deltas"]
+
+
+def test_router_supplies_canonical_periods_to_non_financial_agents():
+    request = NormalizedReviewRequest.model_validate(normalized_review_payload())
+
+    routed = ContextRouter().route(request)
+
+    management_periods = routed.by_role[AgentRole.MANAGEMENT_INTENT].context[
+        "financial_snapshot_minimal"
+    ]["canonical_metric_periods"]
+    guidance_periods = routed.by_role[AgentRole.GUIDANCE].context["guidance_metrics"][
+        "canonical_metric_periods"
+    ]
+    for role in (AgentRole.BULL, AgentRole.BEAR, AgentRole.JUDGE):
+        summary_periods = routed.by_role[role].context["financial_snapshot_summary"][
+            "canonical_metric_periods"
+        ]
+        assert summary_periods["previous_quarter"]["revenue"]["status"] == "available"
+        assert (
+            summary_periods["year_ago_quarter"]["free_cash_flow"]["source_ref"]["source_type"]
+            == "derived_metric"
+        )
+
+    assert management_periods["actual"]["eps"]["value"] == 0.81
+    assert management_periods["previous_quarter"]["revenue"]["status"] == "available"
+    assert guidance_periods["year_ago_quarter"]["eps"]["source_ref"]["provider"] == "yfinance"
+    assert guidance_periods["year_ago_quarter"]["free_cash_flow"]["status"] == "available"
 
 
 def test_router_uses_registered_fallback_sources_when_required_role_would_be_starved():

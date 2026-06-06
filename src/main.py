@@ -22,7 +22,11 @@ from pydantic import ValidationError
 from .llm import get_provider
 from .preprocessor import build_normalized_review_request
 from .workflow import ReviewWorkflow
-from .workflow_models import NormalizedReviewRequest, ReviewRequest
+from .workflow_models import (
+    NormalizedReviewRequest,
+    ReviewRequest,
+    source_refs_from_financial_metrics,
+)
 
 
 def setup_logging() -> None:
@@ -99,11 +103,11 @@ def run(
     if api_url == "local" or (
         api_url == "http://127.0.0.1:8000" and os.getenv("LLM_PROVIDER", "").lower() == "fake"
     ):
-        body = (
-            ReviewWorkflow(get_provider())
-            .run(_review_request_from_normalized(normalized_request))
-            .model_dump(mode="json")
-        )
+        from .api import _success_response
+
+        review_request = _review_request_from_normalized(normalized_request)
+        workflow_result = ReviewWorkflow(get_provider()).run(review_request)
+        body = _success_response(review_request, workflow_result).model_dump(mode="json")
     else:
         response = requests.post(f"{api_url.rstrip('/')}/reviews", json=payload, timeout=300)
         response.raise_for_status()
@@ -164,8 +168,16 @@ def _review_request_from_normalized(request: NormalizedReviewRequest) -> ReviewR
             "request_id": request.request_id,
             "ticker": request.ticker,
             "fiscal_period": request.fiscal_period,
+            "target_earnings_date": request.target_earnings_date,
+            "target_period_end_date": request.target_period_end_date,
+            "prior_fiscal_period": request.prior_fiscal_period,
+            "input_profile": request.input_profile,
             "financial_metrics": request.financial_metrics,
             "document_sections": request.document_sections,
+            "source_refs": [
+                *source_refs_from_financial_metrics(request.financial_metrics),
+                *(section.source_ref for section in request.document_sections),
+            ],
             "source_manifest": request.source_manifest,
             "context_budget": request.context_budget,
             "include_markdown": request.include_markdown,

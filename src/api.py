@@ -24,6 +24,7 @@ from .workflow_models import (
     ReviewErrorResponse,
     ReviewSuccessResponse,
     WorkflowErrorDetail,
+    source_refs_from_financial_metrics,
 )
 from .workflow_validation import WorkflowValidationError
 
@@ -155,10 +156,14 @@ def _legacy_review_request(request: NormalizedReviewRequest) -> ReviewRequest:
         request_id=request.request_id,
         ticker=request.ticker,
         fiscal_period=request.fiscal_period,
+        target_earnings_date=request.target_earnings_date,
+        target_period_end_date=request.target_period_end_date,
+        prior_fiscal_period=request.prior_fiscal_period,
+        input_profile=request.input_profile,
         financial_metrics=request.financial_metrics,
         document_sections=request.document_sections,
         source_refs=[
-            *request.financial_metrics.source_refs,
+            *source_refs_from_financial_metrics(request.financial_metrics),
             *(section.source_ref for section in request.document_sections),
         ],
         source_manifest=request.source_manifest,
@@ -170,8 +175,11 @@ def _legacy_review_request(request: NormalizedReviewRequest) -> ReviewRequest:
 
 
 def _success_response(request: ReviewRequest, result: ReviewResponse) -> ReviewSuccessResponse:
+    matrix_request = request
+    if result.financial_metrics is not None:
+        matrix_request = request.model_copy(update={"financial_metrics": result.financial_metrics})
     claim_matrix = MarkdownRenderer().build_report_matrix(
-        request=request,
+        request=matrix_request,
         brief=result.analysis_brief,
         debate=result.debate_result,
         decision=result.judge_decision,
@@ -181,6 +189,7 @@ def _success_response(request: ReviewRequest, result: ReviewResponse) -> ReviewS
         ticker=result.ticker,
         fiscal_period=result.fiscal_period,
         steps=result.steps,
+        agent_traces=result.agent_traces,
         analysis_brief=result.analysis_brief,
         claim_matrix=claim_matrix,
         bull_case=result.bull_case,
@@ -188,13 +197,15 @@ def _success_response(request: ReviewRequest, result: ReviewResponse) -> ReviewS
         debate_result=result.debate_result,
         judge_decision=result.judge_decision,
         decision_uses=claim_matrix.decision_uses,
-        quality_gate_result=_quality_gate_result(claim_matrix),
+        quality_gate_result=_quality_gate_result(claim_matrix, result.agent_traces),
         markdown_report=result.markdown_report,
         disclaimer=result.disclaimer,
     )
 
 
-def _quality_gate_result(claim_matrix: Any) -> dict[str, Any]:
+def _quality_gate_result(
+    claim_matrix: Any, agent_traces: list[Any] | None = None
+) -> dict[str, Any]:
     return {
         "status": "passed",
         "source_manifest_entries": len(claim_matrix.source_manifest),
@@ -202,6 +213,10 @@ def _quality_gate_result(claim_matrix: Any) -> dict[str, Any]:
         "claim_records": len(claim_matrix.claim_records),
         "decision_uses": len(claim_matrix.decision_uses),
         "missing_data_items": len(claim_matrix.missing_data_items),
+        "agent_traces": [
+            trace.model_dump(mode="json") if hasattr(trace, "model_dump") else trace
+            for trace in (agent_traces or [])
+        ],
     }
 
 

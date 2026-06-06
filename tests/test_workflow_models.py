@@ -7,6 +7,8 @@ from src.workflow_models import (
     AgentRole,
     AgentTeam,
     AnalysisBrief,
+    AvailabilityItem,
+    AvailabilityStatus,
     BearCase,
     BullCase,
     CashFlowRiskFinding,
@@ -14,6 +16,7 @@ from src.workflow_models import (
     ClaimType,
     DebateResult,
     DecisionUse,
+    DocumentSection,
     EarningsQualityFinding,
     EvidenceItem,
     EvidencePolarity,
@@ -21,25 +24,35 @@ from src.workflow_models import (
     FinalVerdict,
     FinancialMetrics,
     FindingCoverage,
+    GuidanceDelta,
     GuidanceFinding,
+    GuidanceMetric,
     ImpactArea,
+    InputProfile,
     JudgeDecision,
     JudgeTreatment,
     LineRange,
     ManagementIntentFinding,
+    MetricPeriodRole,
+    MetricValue,
     MissingDataItem,
     NormalizedReviewRequest,
+    PresentationMetricCandidate,
+    PresentationMetricCandidateStatus,
+    PresentationTag,
     ReportMatrix,
     ReviewDryRunResponse,
     ReviewErrorResponse,
     ReviewRequest,
     ReviewResponse,
     ReviewStatus,
+    ReviewSuccessResponse,
     SourceManifestEntry,
     SourceRef,
     SourceType,
     StepState,
     StepStatus,
+    TaggedPresentationSection,
     VerdictLabel,
     WorkflowStep,
 )
@@ -143,6 +156,139 @@ def test_financial_metrics_normalizes_ticker_and_currency():
 
     assert metrics.ticker == "NVDA"
     assert metrics.currency == "USD"
+
+
+def test_plan_n0015_input_profile_defaults_and_availability_models_are_additive():
+    request = NormalizedReviewRequest.model_validate(normalized_request_payload())
+
+    assert request.input_profile is InputProfile.YFINANCE_SEC_PRESENTATION_TAGGED
+    availability = AvailabilityItem(
+        key="consensus:revenue",
+        status=AvailabilityStatus.OPTIONAL_MISSING,
+        reason="yfinance did not provide a revenue consensus value.",
+        blocks_verdict=False,
+    )
+    assert availability.status is AvailabilityStatus.OPTIONAL_MISSING
+    assert availability.blocks_verdict is False
+
+
+def test_plan_n0015_metric_guidance_and_tagged_section_models_keep_source_refs():
+    source_ref = SourceRef(
+        source_id="financial_api:NVDA:2025Q3:eps",
+        source_type=SourceType.FINANCIAL_API,
+        metric_name="eps",
+        reported_period="2025Q3",
+        period_role=MetricPeriodRole.ACTUAL,
+    )
+    metric = MetricValue(
+        metric_id="metric:eps:actual",
+        metric_name="eps",
+        value=0.81,
+        unit="USD/share",
+        fiscal_period="2025Q3",
+        period_role=MetricPeriodRole.ACTUAL,
+        source_ref=source_ref,
+    )
+    guidance = GuidanceMetric(
+        metric_id="guidance:revenue:q4",
+        metric_name="revenue",
+        value=37_000_000_000,
+        unit="USD",
+        fiscal_period="2025Q4",
+        period_role=MetricPeriodRole.GUIDANCE,
+        source_ref=SourceRef(
+            source_id="presentation:guidance",
+            source_type=SourceType.EARNINGS_PRESENTATION,
+            document_id="deck",
+            section_id="guidance",
+            title="Guidance slide",
+        ),
+        low_value=36_000_000_000,
+        high_value=38_000_000_000,
+    )
+    delta = GuidanceDelta(
+        metric_name="revenue",
+        fiscal_period="2025Q4",
+        company_guidance=guidance,
+        consensus_estimate=metric.model_copy(
+            update={
+                "metric_id": "metric:revenue:consensus",
+                "metric_name": "revenue",
+                "fiscal_period": "2025Q4",
+                "period_role": MetricPeriodRole.CONSENSUS,
+                "source_ref": SourceRef(
+                    source_id="financial_api:NVDA:2025Q4:revenue_consensus",
+                    source_type=SourceType.FINANCIAL_API,
+                    metric_name="revenue_consensus",
+                    reported_period="2025Q4",
+                    period_role=MetricPeriodRole.CONSENSUS,
+                ),
+            }
+        ),
+        delta_value=1_000_000_000,
+        delta_pct=2.8,
+    )
+    tagged = TaggedPresentationSection(
+        section=DocumentSection(
+            section_id="guidance",
+            source_ref=guidance.source_ref,
+            heading="Page 5",
+            text="Management guidance assumes durable demand.",
+        ),
+        tags=[PresentationTag.GUIDANCE, PresentationTag.ASSUMPTIONS],
+    )
+
+    assert delta.company_guidance.source_ref.source_id == "presentation:guidance"
+    assert tagged.tags == [PresentationTag.GUIDANCE, PresentationTag.ASSUMPTIONS]
+
+
+def test_plan_n0015_presentation_fcf_candidate_conflicts_with_canonical_actual():
+    candidate = PresentationMetricCandidate(
+        candidate_id="candidate:nvda-fcf-slide",
+        metric_name="free_cash_flow",
+        raw_text="Free cash flow was 48.6B.",
+        value=48_600_000_000,
+        unit="USD",
+        fiscal_period="2025Q3",
+        period_role=MetricPeriodRole.ACTUAL,
+        source_ref=SourceRef(
+            source_id="presentation:fcf",
+            source_type=SourceType.EARNINGS_PRESENTATION,
+            document_id="deck",
+            section_id="fcf",
+            title="Presentation FCF slide",
+        ),
+    )
+
+    metrics = FinancialMetrics(
+        ticker="NVDA",
+        fiscal_period="2025Q3",
+        free_cash_flow=12_000_000_000,
+        canonical_metrics=[
+            MetricValue(
+                metric_id="metric:NVDA:2025Q3:free_cash_flow",
+                metric_name="free_cash_flow",
+                value=12_000_000_000,
+                unit="USD",
+                fiscal_period="2025Q3",
+                period_role=MetricPeriodRole.ACTUAL,
+                source_ref=SourceRef(
+                    source_id="financial_api:NVDA:2025Q3:free_cash_flow",
+                    source_type=SourceType.FINANCIAL_API,
+                    metric_name="free_cash_flow",
+                    reported_period="2025Q3",
+                    period_role=MetricPeriodRole.ACTUAL,
+                ),
+            )
+        ],
+        presentation_metric_candidates=[candidate],
+    )
+
+    assert len(metrics.metric_conflicts) == 1
+    assert metrics.metric_conflicts[0].canonical_metric_id == "metric:NVDA:2025Q3:free_cash_flow"
+    assert metrics.presentation_metric_candidates[0].status is (
+        PresentationMetricCandidateStatus.CONFLICTING_WITH_CANONICAL
+    )
 
 
 def test_contracts_reject_extra_fields_and_strip_strings():
@@ -419,6 +565,88 @@ def test_full_review_response_contains_structured_result_and_markdown():
     assert response.ticker == "NVDA"
     assert response.markdown_report.startswith("# Earnings Review")
     assert response.is_investment_advice is False
+
+
+def test_review_responses_accept_source_forward_markdown_report():
+    positive = evidence()
+    negative = evidence("ev:negative:capex", EvidencePolarity.NEGATIVE)
+    status = completed_status(WorkflowStep.JUDGE)
+    brief = analysis_brief(positive=positive, negative=negative)
+    debate = DebateResult(
+        bull_case="Bull case.",
+        bear_case="Bear case.",
+        risk_case="Risk case.",
+        evaluation="Evaluation.",
+        strongest_positive_evidence=[positive],
+        strongest_negative_evidence=[negative],
+    )
+    decision = JudgeDecision(
+        verdict="good",
+        confidence=0.72,
+        summary="Good quarter.",
+        rationale="EPS evidence outweighed FCF risk.",
+        positive_evidence=[positive],
+        negative_evidence=[negative],
+        eps_outlook="EPS can rise.",
+        eps_outlook_reason="EPS evidence is positive.",
+        fcf_outlook="FCF can improve.",
+        fcf_outlook_reason="FCF risk is manageable.",
+    )
+    bull = BullCase(
+        thesis="EPS quality supports a good interpretation.",
+        stance_strength="moderate",
+        strongest_positive_evidence=[positive],
+        eps_bull_argument="EPS can improve.",
+        fcf_bull_argument="FCF can improve.",
+        conditions_needed=["Demand remains durable."],
+        weak_points=["Near-term FCF remains pressured."],
+        finding_coverage=complete_finding_coverage(),
+        confidence=0.7,
+    )
+    bear = BearCase(
+        thesis="FCF risk remains.",
+        stance_strength="moderate",
+        strongest_negative_evidence=[negative],
+        eps_bear_argument="EPS durability could fade.",
+        fcf_bear_argument="FCF may stay pressured.",
+        failure_modes=["CapEx remains elevated."],
+        counter_to_bull_case=["Demand could slow."],
+        finding_coverage=complete_finding_coverage(),
+        confidence=0.65,
+    )
+    markdown = "# Earnings Review\n\n" + ("Source-backed report row.\n" * 3_000)
+    response = ReviewResponse(
+        request_id="req-long-report",
+        ticker="NVDA",
+        fiscal_period="2025Q3",
+        steps=[status],
+        analysis_brief=brief,
+        bull_case=bull,
+        bear_case=bear,
+        debate_result=debate,
+        judge_decision=decision,
+        markdown_report=markdown,
+    )
+    matrix = ReportMatrix(
+        source_manifest=source_manifest(),
+        evidence_items=[positive, negative],
+    )
+
+    success = ReviewSuccessResponse(
+        request_id=response.request_id,
+        ticker=response.ticker,
+        fiscal_period=response.fiscal_period,
+        steps=response.steps,
+        analysis_brief=response.analysis_brief,
+        claim_matrix=matrix,
+        bull_case=response.bull_case,
+        bear_case=response.bear_case,
+        debate_result=response.debate_result,
+        judge_decision=response.judge_decision,
+        markdown_report=response.markdown_report,
+    )
+
+    assert len(success.markdown_report) > 20_000
 
 
 def source_manifest() -> list[SourceManifestEntry]:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from threading import Lock
 
 import pytest
@@ -9,10 +10,18 @@ from src import api
 from src.llm import LLMResponse
 from src.workflow import ReviewWorkflow, WorkflowValidationError
 from src.workflow_models import (
+    AvailabilityStatus,
+    DerivedMetricValue,
+    DocumentSection,
+    EarningsQualityFinding,
     EvidenceItem,
     EvidencePolarity,
+    FinancialMetrics,
     ImpactArea,
+    MetricPeriodRole,
+    MetricValue,
     ReviewRequest,
+    SourceManifestEntry,
     SourceRef,
     SourceType,
 )
@@ -90,24 +99,7 @@ class FakeLLM:
           "agent_name": "bull_agent",
           "thesis": "EPS quality and guidance support a good interpretation.",
           "stance_strength": "moderate",
-          "strongest_positive_evidence": [
-            {
-              "evidence_id": "EarningsQualityAnalyst:positive",
-              "polarity": "positive",
-              "summary": "EPS quality improved.",
-              "detail": "EPS quality improved.",
-              "impact_areas": ["eps"],
-              "source_ref": {
-                "source_id": "filing:eps",
-                "source_type": "filing",
-                "document_id": "10q-2025q3",
-                "section_id": "eps",
-                "title": "eps filing section",
-                "reported_period": "2025Q3"
-              },
-              "confidence": 0.70
-            }
-          ],
+          "strongest_positive_evidence_ids": ["EarningsQualityAnalyst:positive"],
           "eps_bull_argument": "Margins support future EPS.",
           "fcf_bull_argument": "FCF can improve as CapEx normalizes.",
           "conditions_needed": ["Revenue growth continues."],
@@ -130,24 +122,7 @@ class FakeLLM:
           "agent_name": "bear_agent",
           "thesis": "FCF and execution risks keep the print from being one-sided.",
           "stance_strength": "moderate",
-          "strongest_negative_evidence": [
-            {
-              "evidence_id": "CashFlowRiskAnalyst:negative",
-              "polarity": "negative",
-              "summary": "CapEx may pressure FCF.",
-              "detail": "CapEx may pressure FCF.",
-              "impact_areas": ["fcf"],
-              "source_ref": {
-                "source_id": "filing:risk",
-                "source_type": "filing",
-                "document_id": "10q-2025q3",
-                "section_id": "risk",
-                "title": "risk filing section",
-                "reported_period": "2025Q3"
-              },
-              "confidence": 0.70
-            }
-          ],
+          "strongest_negative_evidence_ids": ["CashFlowRiskAnalyst:negative"],
           "eps_bear_argument": "Some margin gains may not persist.",
           "fcf_bear_argument": "Near-term investment can pressure FCF.",
           "failure_modes": ["Demand slows."],
@@ -171,42 +146,8 @@ class FakeLLM:
           "confidence": 0.76,
           "summary": "EPS quality and FCF path look constructive with caveats.",
           "rationale": "Positive EPS and margin evidence outweighed near-term FCF risks.",
-          "positive_evidence": [
-            {
-              "evidence_id": "EarningsQualityAnalyst:positive",
-              "polarity": "positive",
-              "summary": "EPS surprise was positive.",
-              "detail": "EPS exceeded consensus with margin support.",
-              "impact_areas": ["eps"],
-              "source_ref": {
-                "source_id": "filing:eps",
-                "source_type": "filing",
-                "document_id": "10q-2025q3",
-                "section_id": "eps",
-                "title": "eps filing section",
-                "reported_period": "2025Q3"
-              },
-              "confidence": 0.75
-            }
-          ],
-          "negative_evidence": [
-            {
-              "evidence_id": "CashFlowRiskAnalyst:negative",
-              "polarity": "negative",
-              "summary": "CapEx may pressure near-term FCF.",
-              "detail": "Elevated investment can delay FCF improvement.",
-              "impact_areas": ["fcf"],
-              "source_ref": {
-                "source_id": "filing:risk",
-                "source_type": "filing",
-                "document_id": "10q-2025q3",
-                "section_id": "risk",
-                "title": "risk filing section",
-                "reported_period": "2025Q3"
-              },
-              "confidence": 0.70
-            }
-          ],
+          "positive_evidence_ids": ["EarningsQualityAnalyst:positive"],
+          "negative_evidence_ids": ["CashFlowRiskAnalyst:negative"],
           "eps_outlook": "EPS can improve if revenue growth and margin discipline continue.",
           "eps_outlook_reason": "Revenue growth and margin discipline support EPS improvement.",
           "fcf_outlook": "FCF can improve after investment intensity moderates.",
@@ -260,15 +201,109 @@ class InvestmentAdviceJudgeLLM(FakeLLM):
         )
 
 
-class ChangedJudgeSourceLLM(FakeLLM):
+class UnknownJudgeEvidenceLLM(FakeLLM):
     def _judge_json(self) -> str:
         return (
             super()
             ._judge_json()
             .replace(
-                '"section_id": "eps"',
-                '"section_id": "invented"',
+                '"EarningsQualityAnalyst:positive"',
+                '"invented:positive"',
                 1,
+            )
+        )
+
+
+class HighConfidenceJudgeLLM(FakeLLM):
+    def _judge_json(self) -> str:
+        return super()._judge_json().replace('"confidence": 0.76', '"confidence": 0.95')
+
+
+class UngroundedWithAlternativeLLM(FakeLLM):
+    def _finding_json(self, role: str) -> str:
+        if role != "EarningsQualityAnalyst":
+            return super()._finding_json(role)
+        return f"""
+        {{
+          "agent_name": "{role}",
+          "stance": "mixed",
+          "summary": "{role} summary",
+          "key_evidence": [
+            {self._evidence_json("eq-ungrounded", "positive", "filing:eps", "Revenue growth was strong")},
+            {{
+              "evidence_id": "eq-grounded",
+              "polarity": "positive",
+              "summary": "EPS improved by 8%.",
+              "detail": "EPS was 0.81 versus 0.75 consensus, a positive surprise.",
+              "impact_areas": ["eps"],
+              "source_ref": {{
+                "source_id": "filing:eps",
+                "source_type": "filing",
+                "document_id": "10q-2025q3",
+                "section_id": "eps",
+                "title": "eps filing section",
+                "reported_period": "2025Q3"
+              }},
+              "metric_name": "eps",
+              "value": 0.81,
+              "unit": "USD/share",
+              "confidence": 0.75
+            }}
+          ],
+          "counter_evidence": [
+            {self._evidence_json(f"{role}:negative", "negative", "filing:risk", f"{role} negative evidence")}
+          ],
+          "confidence": 0.70,
+          "missing_data": [],
+          "handoff_summary": "{role} handoff"
+        }}
+        """
+
+    def _bull_json(self) -> str:
+        return super()._bull_json().replace("EarningsQualityAnalyst:positive", "eq-grounded")
+
+    def _judge_json(self) -> str:
+        return super()._judge_json().replace("EarningsQualityAnalyst:positive", "eq-grounded")
+
+
+class UngroundedOnlyWithPoolAlternativeLLM(FakeLLM):
+    def _finding_json(self, role: str) -> str:
+        if role != "EarningsQualityAnalyst":
+            return super()._finding_json(role)
+        return f"""
+        {{
+          "agent_name": "{role}",
+          "stance": "mixed",
+          "summary": "{role} summary",
+          "key_evidence": [
+            {self._evidence_json("eq-only-ungrounded", "positive", "filing:eps", "Revenue growth was strong")}
+          ],
+          "counter_evidence": [
+            {self._evidence_json(f"{role}:negative", "negative", "filing:risk", f"{role} negative evidence")}
+          ],
+          "confidence": 0.70,
+          "missing_data": [],
+          "handoff_summary": "{role} handoff"
+        }}
+        """
+
+    def _bull_json(self) -> str:
+        return (
+            super()
+            ._bull_json()
+            .replace(
+                "EarningsQualityAnalyst:positive",
+                "CashFlowRiskAnalyst:positive",
+            )
+        )
+
+    def _judge_json(self) -> str:
+        return (
+            super()
+            ._judge_json()
+            .replace(
+                "EarningsQualityAnalyst:positive",
+                "CashFlowRiskAnalyst:positive",
             )
         )
 
@@ -354,20 +389,24 @@ def test_review_workflow_runs_ordered_api_first_steps(monkeypatch):
     fake_llm = FakeLLM()
     workflow = ReviewWorkflow(llm=fake_llm)
 
-    response = workflow.run(ReviewRequest.model_validate(_request_payload()))
+    request = ReviewRequest.model_validate(_request_payload())
+    response = workflow.run(request)
 
     assert response.ticker == "NVDA"
     assert response.fiscal_period == "2025Q3"
     assert response.judge_decision.verdict.value == "good"
     for section in (
-        "## Judge Rationale",
-        "## Bull vs Bear Tension",
-        "## Evidence Matrix",
-        "## Agent Contribution",
-        "## Uncertainty And Missing Data",
-        "## Quality Gates",
-        "## Source Appendix",
-        "## Disclaimer",
+        "## レポート前提: canonical data",
+        "## 要約",
+        "## 判定理由",
+        "## EPS/FCF見通し",
+        "## Bull/Bear論点",
+        "## Agent分析",
+        "## 根拠マトリクス (Evidence Matrix)",
+        "## 不確実性と不足データ",
+        "## 品質ゲート (Quality Gates)",
+        "## ソース付録 (Source Appendix)",
+        "## 免責事項",
     ):
         assert section in response.markdown_report
     assert "| Claim ID | Fact | Interpretation | Implication | Time scope |" in (
@@ -400,9 +439,134 @@ def test_review_workflow_runs_ordered_api_first_steps(monkeypatch):
     }
     assert fake_llm.calls.count("judge") == 1
     assert len(fake_llm.calls) == 7
+    assert response.bull_case.strongest_positive_evidence[0].evidence_id == (
+        "EarningsQualityAnalyst:positive"
+    )
+    assert response.bear_case.strongest_negative_evidence[0].evidence_id == (
+        "CashFlowRiskAnalyst:negative"
+    )
+    assert response.judge_decision.positive_evidence[0].source_ref.source_id == "filing:eps"
+    assert {trace.public_role for trace in response.agent_traces} == {
+        "EarningsQualityAnalyst",
+        "CashFlowRiskAnalyst",
+        "ManagementIntentAnalyst",
+        "GuidanceAnalyst",
+        "BullAgent",
+        "BearAgent",
+        "JudgeAgent",
+    }
+    assert all(trace.attempt_count == 1 for trace in response.agent_traces)
+    assert sum(trace.total_output_tokens for trace in response.agent_traces) == 7
+    success = api._success_response(request, response)
+    assert len(success.agent_traces) == 7
+    assert len(success.quality_gate_result["agent_traces"]) == 7
+    assert success.quality_gate_result["agent_traces"][-1]["public_role"] == "JudgeAgent"
     earnings_quality_prompt = fake_llm.user_prompts["EarningsQualityAnalyst"][0]
     assert "filing:eps" in earnings_quality_prompt
     assert "filing:guidance" not in earnings_quality_prompt
+
+
+def test_workflow_fallback_guidance_deltas_are_not_full_metrics_aliases():
+    workflow = ReviewWorkflow(llm=FakeLLM())
+    request = ReviewRequest(ticker="NVDA", fiscal_period="2025Q3")
+    metrics = FinancialMetrics(
+        ticker="NVDA",
+        fiscal_period="2025Q3",
+        eps=0.81,
+        eps_consensus=0.75,
+        guidance="Management guided to durable demand.",
+    )
+    sections = [
+        DocumentSection(
+            section_id="page-5",
+            source_ref=SourceRef(
+                source_id="presentation:page-5",
+                source_type=SourceType.EARNINGS_PRESENTATION,
+                document_id="deck",
+                section_id="page-5",
+                page=5,
+            ),
+            heading="Page 5",
+            text="Management guidance and outlook assume durable demand.",
+        )
+    ]
+
+    context = workflow._build_agent_context(request, metrics, sections)
+
+    assert isinstance(context, dict)
+    assert context["guidance_consensus_deltas"] == []
+    assert context["consensus_deltas"] == []
+    assert context["guidance_metrics"]["company_guidance"]
+    assert "presentation:page-5" in str(context["guidance_sections"])
+
+
+def test_workflow_ingest_appends_sec_sections_when_presentation_exists(monkeypatch):
+    calls = {}
+    filing_url = "https://www.sec.gov/Archives/example/sample.htm"
+
+    def fake_fetch_filing_html(url):
+        calls["fetch_url"] = url
+        return "<html>mock filing</html>"
+
+    def fake_segment_filing(html, url=None):
+        calls["segment_html"] = html
+        calls["segment_url"] = url
+        return [
+            DocumentSection(
+                section_id="filing:risk",
+                source_ref=SourceRef(
+                    source_id="filing:risk",
+                    source_type=SourceType.FILING,
+                    document_id="filing-html",
+                    section_id="filing:risk",
+                    url=filing_url,
+                ),
+                heading="Risk",
+                text="Risk factors discuss demand uncertainty.",
+            )
+        ]
+
+    monkeypatch.setattr("src.workflow._fetch_filing_html", fake_fetch_filing_html)
+    monkeypatch.setattr("src.workflow._segment_filing", fake_segment_filing)
+
+    workflow = ReviewWorkflow(llm=FakeLLM())
+    metrics = FinancialMetrics(
+        ticker="NVDA",
+        fiscal_period="2025Q3",
+        eps=0.81,
+        eps_consensus=0.75,
+    )
+    request = ReviewRequest(
+        ticker="NVDA",
+        fiscal_period="2025Q3",
+        financial_metrics=metrics,
+        filing_url=filing_url,
+        document_sections=[
+            DocumentSection(
+                section_id="presentation:guidance",
+                source_ref=SourceRef(
+                    source_id="presentation:guidance",
+                    source_type=SourceType.EARNINGS_PRESENTATION,
+                    document_id="deck",
+                    section_id="presentation:guidance",
+                ),
+                heading="Page 5",
+                text="Management guidance assumes durable demand.",
+            )
+        ],
+    )
+
+    _metrics, sections = workflow._ingest(request)
+
+    assert calls == {
+        "fetch_url": filing_url,
+        "segment_html": "<html>mock filing</html>",
+        "segment_url": filing_url,
+    }
+    assert {section.source_ref.source_type for section in sections} == {
+        SourceType.EARNINGS_PRESENTATION,
+        SourceType.FILING,
+    }
 
 
 def test_workflow_rejects_bull_case_evidence_not_in_analysis_brief(monkeypatch):
@@ -418,7 +582,7 @@ def test_workflow_rejects_bull_case_evidence_not_in_analysis_brief(monkeypatch):
         workflow.run(ReviewRequest.model_validate(_request_payload()))
 
 
-def test_workflow_rejects_investment_advice_text(monkeypatch):
+def test_workflow_warns_and_redacts_judge_investment_advice_text(monkeypatch):
     def fail_external_fetch(*args, **kwargs):
         raise AssertionError("fixture inputs should bypass external fetches")
 
@@ -427,20 +591,86 @@ def test_workflow_rejects_investment_advice_text(monkeypatch):
 
     workflow = ReviewWorkflow(llm=InvestmentAdviceJudgeLLM())
 
-    with pytest.raises(WorkflowValidationError, match="investment-advice language"):
-        workflow.run(ReviewRequest.model_validate(_request_payload()))
+    response = workflow.run(ReviewRequest.model_validate(_request_payload()))
+
+    assert "buy the stock" not in response.markdown_report.lower()
+    assert any(
+        item.key.startswith("llm_investment_advice:judge_decision")
+        for item in response.analysis_brief.quality_warnings
+    )
 
 
-def test_workflow_rejects_judge_evidence_source_ref_changes(monkeypatch):
+def test_workflow_degrades_ungrounded_material_evidence_when_alternative_exists(monkeypatch):
     def fail_external_fetch(*args, **kwargs):
         raise AssertionError("fixture inputs should bypass external fetches")
 
     monkeypatch.setattr("src.workflow._fetch_consensus", fail_external_fetch)
     monkeypatch.setattr("src.workflow._fetch_filing_html", fail_external_fetch)
 
-    workflow = ReviewWorkflow(llm=ChangedJudgeSourceLLM())
+    workflow = ReviewWorkflow(llm=UngroundedWithAlternativeLLM())
 
-    with pytest.raises(WorkflowValidationError, match="changed the validated source_ref"):
+    response = workflow.run(ReviewRequest.model_validate(_request_payload()))
+
+    positive_ids = {item.evidence_id for item in response.analysis_brief.positive_evidence_pool}
+    specialist_ids = {
+        item.evidence_id
+        for item in [
+            *response.analysis_brief.earnings_quality_finding.key_evidence,
+            *response.analysis_brief.earnings_quality_finding.counter_evidence,
+        ]
+    }
+    judge_positive_ids = {item.evidence_id for item in response.judge_decision.positive_evidence}
+    agent_result_ids = {
+        item.evidence_id
+        for result in response.analysis_brief.financial_agent_results
+        for item in [*result.key_evidence, *result.counter_evidence]
+    }
+    warning_keys = {item.key for item in response.analysis_brief.quality_warnings}
+
+    assert "eq-grounded" in positive_ids
+    assert "eq-ungrounded" not in positive_ids
+    assert "eq-ungrounded" not in specialist_ids
+    assert "eq-ungrounded" not in judge_positive_ids
+    assert "eq-ungrounded" not in agent_result_ids
+    assert "llm_numeric_grounding:eq-ungrounded" in warning_keys
+    assert "llm_numeric_grounding:eq-ungrounded" in response.markdown_report
+    assert "Revenue growth was strong" not in response.markdown_report
+
+
+def test_workflow_keeps_degraded_finding_schema_valid_when_field_would_empty(monkeypatch):
+    def fail_external_fetch(*args, **kwargs):
+        raise AssertionError("fixture inputs should bypass external fetches")
+
+    monkeypatch.setattr("src.workflow._fetch_consensus", fail_external_fetch)
+    monkeypatch.setattr("src.workflow._fetch_filing_html", fail_external_fetch)
+
+    workflow = ReviewWorkflow(llm=UngroundedOnlyWithPoolAlternativeLLM())
+
+    response = workflow.run(ReviewRequest.model_validate(_request_payload()))
+
+    finding = response.analysis_brief.earnings_quality_finding
+    EarningsQualityFinding.model_validate(finding.model_dump(mode="json"))
+    finding_ids = {item.evidence_id for item in [*finding.key_evidence, *finding.counter_evidence]}
+    positive_ids = {item.evidence_id for item in response.analysis_brief.positive_evidence_pool}
+    warning_keys = {item.key for item in response.analysis_brief.quality_warnings}
+
+    assert "eq-only-ungrounded" not in finding_ids
+    assert "eq-only-ungrounded" not in positive_ids
+    assert any(item.startswith("quality_warning:") for item in finding_ids)
+    assert "llm_numeric_grounding:eq-only-ungrounded" in warning_keys
+    assert "Revenue growth was strong" not in response.markdown_report
+
+
+def test_workflow_rejects_judge_evidence_ids_outside_analysis_brief(monkeypatch):
+    def fail_external_fetch(*args, **kwargs):
+        raise AssertionError("fixture inputs should bypass external fetches")
+
+    monkeypatch.setattr("src.workflow._fetch_consensus", fail_external_fetch)
+    monkeypatch.setattr("src.workflow._fetch_filing_html", fail_external_fetch)
+
+    workflow = ReviewWorkflow(llm=UnknownJudgeEvidenceLLM())
+
+    with pytest.raises(WorkflowValidationError, match="not present in validated AnalysisBrief"):
         workflow.run(ReviewRequest.model_validate(_request_payload()))
 
 
@@ -515,6 +745,272 @@ def test_workflow_canonicalizes_valid_evidence_source_url():
     assert str(updated.source_ref.url) == "https://www.sec.gov/Archives/example/nvda.htm"
 
 
+def test_workflow_canonicalizes_source_manifest_metric_metadata():
+    validator = WorkflowValidationGate()
+    canonical = SourceManifestEntry(
+        source_id="financial_api:NVDA:2025Q3:eps",
+        source_type=SourceType.FINANCIAL_API,
+        metric_name="eps",
+        title="yfinance EPS",
+        reported_period="2025Q3",
+        provider="yfinance",
+        provider_row_date=date(2025, 8, 28),
+        period_role=MetricPeriodRole.ACTUAL,
+    )
+    emitted = EvidenceItem(
+        evidence_id="ev-source-metadata",
+        polarity=EvidencePolarity.POSITIVE,
+        summary="EPS beat consensus.",
+        detail="Reported EPS exceeded the consensus estimate.",
+        impact_areas=[ImpactArea.EPS],
+        source_ref=SourceRef(
+            source_id="financial_api:NVDA:2025Q3:eps",
+            source_type=SourceType.FINANCIAL_API,
+            metric_name="eps",
+            reported_period="2025Q3",
+        ),
+        confidence=0.7,
+    )
+
+    canonical_ref = validator.source_ref_from_manifest_entry(canonical)
+    canonical_sources = {validator.source_signature(canonical_ref): canonical_ref}
+    validator.validate_evidence_sources([emitted], set(canonical_sources))
+    [updated] = validator.canonicalize_evidence_sources([emitted], canonical_sources)
+
+    assert updated.source_ref.provider == "yfinance"
+    assert updated.source_ref.provider_row_date == date(2025, 8, 28)
+    assert updated.source_ref.period_role is MetricPeriodRole.ACTUAL
+
+
+def test_workflow_normalize_metrics_preserves_metric_value_source_refs():
+    def metric_ref(metric_name: str, provider: str = "sec_company_facts") -> SourceRef:
+        return SourceRef(
+            source_id=f"financial_api:NVDA:2025Q3:{provider}:{metric_name}",
+            source_type=SourceType.FINANCIAL_API,
+            metric_name=metric_name,
+            reported_period="2025Q3",
+            provider=provider,
+            period_role=MetricPeriodRole.ACTUAL,
+        )
+
+    revenue_ref = metric_ref("revenue")
+    eps_ref = metric_ref("eps", provider="yfinance")
+    operating_cash_flow_ref = metric_ref("operating_cash_flow")
+    capex_ref = metric_ref("capex")
+    derived_ref = SourceRef(
+        source_id="metric:NVDA:2025Q3:free_cash_flow:derived",
+        source_type=SourceType.DERIVED_METRIC,
+        metric_name="free_cash_flow",
+        reported_period="2025Q3",
+        period_role=MetricPeriodRole.ACTUAL,
+    )
+    metrics = FinancialMetrics(
+        ticker="NVDA",
+        fiscal_period="2025Q3",
+        revenue=35_000_000_000,
+        eps=0.81,
+        operating_cash_flow=15_000_000_000,
+        capex=-3_000_000_000,
+        free_cash_flow=12_000_000_000,
+        source_refs=[],
+        canonical_metrics=[
+            MetricValue(
+                metric_id="metric:NVDA:2025Q3:revenue",
+                metric_name="revenue",
+                value=35_000_000_000,
+                unit="USD",
+                fiscal_period="2025Q3",
+                period_role=MetricPeriodRole.ACTUAL,
+                source_ref=revenue_ref,
+            ),
+            MetricValue(
+                metric_id="metric:NVDA:2025Q3:eps",
+                metric_name="eps",
+                value=0.81,
+                unit="USD/share",
+                fiscal_period="2025Q3",
+                period_role=MetricPeriodRole.ACTUAL,
+                source_ref=eps_ref,
+            ),
+            MetricValue(
+                metric_id="metric:NVDA:2025Q3:operating_cash_flow",
+                metric_name="operating_cash_flow",
+                value=15_000_000_000,
+                unit="USD",
+                fiscal_period="2025Q3",
+                period_role=MetricPeriodRole.ACTUAL,
+                source_ref=operating_cash_flow_ref,
+            ),
+            MetricValue(
+                metric_id="metric:NVDA:2025Q3:capex",
+                metric_name="capex",
+                value=-3_000_000_000,
+                unit="USD",
+                fiscal_period="2025Q3",
+                period_role=MetricPeriodRole.ACTUAL,
+                source_ref=capex_ref,
+            ),
+        ],
+        derived_metrics=[
+            DerivedMetricValue(
+                metric_id="metric:NVDA:2025Q3:free_cash_flow",
+                metric_name="free_cash_flow",
+                value=12_000_000_000,
+                unit="USD",
+                fiscal_period="2025Q3",
+                period_role=MetricPeriodRole.ACTUAL,
+                source_ref=derived_ref,
+                component_metric_ids=[
+                    "metric:NVDA:2025Q3:operating_cash_flow",
+                    "metric:NVDA:2025Q3:capex",
+                ],
+                component_source_refs=[operating_cash_flow_ref, capex_ref],
+            )
+        ],
+    )
+
+    normalized = ReviewWorkflow(llm=FakeLLM())._normalize_metrics(metrics)
+
+    canonical_statuses = {
+        item.key: item.status
+        for item in normalized.availability
+        if item.key in {"revenue", "eps", "operating_cash_flow", "capex", "free_cash_flow"}
+    }
+    assert canonical_statuses == {
+        "revenue": AvailabilityStatus.AVAILABLE,
+        "eps": AvailabilityStatus.AVAILABLE,
+        "operating_cash_flow": AvailabilityStatus.AVAILABLE,
+        "capex": AvailabilityStatus.AVAILABLE,
+        "free_cash_flow": AvailabilityStatus.AVAILABLE,
+    }
+    assert {ref.source_id for ref in normalized.source_refs} >= {
+        revenue_ref.source_id,
+        eps_ref.source_id,
+        operating_cash_flow_ref.source_id,
+        capex_ref.source_id,
+    }
+
+
+def test_workflow_normalize_metrics_prefers_complete_metric_value_source_ref():
+    complete_revenue_ref = SourceRef(
+        source_id="financial_api:NVDA:2025Q3:sec_company_facts:revenue",
+        source_type=SourceType.FINANCIAL_API,
+        metric_name="revenue",
+        reported_period="2025Q3",
+        provider="sec_company_facts",
+        period_role=MetricPeriodRole.ACTUAL,
+    )
+    incomplete_revenue_ref = SourceRef(
+        source_id=complete_revenue_ref.source_id,
+        source_type=SourceType.FINANCIAL_API,
+        metric_name="revenue",
+    )
+    metrics = FinancialMetrics(
+        ticker="NVDA",
+        fiscal_period="2025Q3",
+        revenue=35_000_000_000,
+        source_refs=[incomplete_revenue_ref],
+        canonical_metrics=[
+            MetricValue(
+                metric_id="metric:NVDA:2025Q3:revenue",
+                metric_name="revenue",
+                value=35_000_000_000,
+                unit="USD",
+                fiscal_period="2025Q3",
+                period_role=MetricPeriodRole.ACTUAL,
+                source_ref=complete_revenue_ref,
+            )
+        ],
+    )
+
+    normalized = ReviewWorkflow(llm=FakeLLM())._normalize_metrics(metrics)
+
+    revenue_ref = next(ref for ref in normalized.source_refs if ref.metric_name == "revenue")
+    assert revenue_ref.provider == "sec_company_facts"
+    assert revenue_ref.reported_period == "2025Q3"
+    assert revenue_ref.period_role is MetricPeriodRole.ACTUAL
+    revenue_availability = next(item for item in normalized.availability if item.key == "revenue")
+    assert revenue_availability.status is AvailabilityStatus.AVAILABLE
+
+
+def test_workflow_normalize_metrics_preserves_comparison_period_metric_values():
+    actual_ref = SourceRef(
+        source_id="financial_api:NVDA:2025Q3:sec:revenue",
+        source_type=SourceType.FINANCIAL_API,
+        metric_name="revenue",
+        reported_period="2025Q3",
+        provider="sec_company_facts",
+        period_role=MetricPeriodRole.ACTUAL,
+    )
+    previous_ref = SourceRef(
+        source_id="financial_api:NVDA:2025Q3:sec:previous_quarter:revenue",
+        source_type=SourceType.FINANCIAL_API,
+        metric_name="revenue",
+        reported_period="2025Q3",
+        provider="sec_company_facts",
+        period_role=MetricPeriodRole.PREVIOUS_QUARTER,
+    )
+    metrics = FinancialMetrics(
+        ticker="NVDA",
+        fiscal_period="2025Q3",
+        revenue=35_000_000_000,
+        source_refs=[actual_ref, previous_ref],
+        canonical_metrics=[
+            MetricValue(
+                metric_id="metric:NVDA:2025Q3:previous_quarter:revenue",
+                metric_name="revenue",
+                value=32_500_000_000,
+                unit="USD",
+                fiscal_period="2025Q3",
+                period_role=MetricPeriodRole.PREVIOUS_QUARTER,
+                source_ref=previous_ref,
+            )
+        ],
+    )
+
+    normalized = ReviewWorkflow(llm=FakeLLM())._normalize_metrics(metrics)
+
+    previous_revenue = next(
+        metric
+        for metric in normalized.canonical_metrics
+        if metric.metric_name == "revenue"
+        and metric.period_role is MetricPeriodRole.PREVIOUS_QUARTER
+    )
+    assert previous_revenue.value == 32_500_000_000
+    availability = {item.key: item.status for item in normalized.availability}
+    assert availability["revenue"] is AvailabilityStatus.AVAILABLE
+    assert availability["previous_quarter:revenue"] is AvailabilityStatus.AVAILABLE
+
+
+def test_workflow_rejects_metric_source_with_mismatched_period_role():
+    validator = WorkflowValidationGate()
+    canonical = SourceRef(
+        source_id="financial_api:NVDA:2025Q3:eps",
+        source_type=SourceType.FINANCIAL_API,
+        metric_name="eps",
+        reported_period="2025Q3",
+        period_role=MetricPeriodRole.ACTUAL,
+    )
+    emitted = EvidenceItem(
+        evidence_id="ev-period-role-mismatch",
+        polarity=EvidencePolarity.POSITIVE,
+        summary="EPS beat consensus.",
+        detail="Reported EPS exceeded the consensus estimate.",
+        impact_areas=[ImpactArea.EPS],
+        source_ref=SourceRef(
+            source_id="financial_api:NVDA:2025Q3:eps",
+            source_type=SourceType.FINANCIAL_API,
+            metric_name="eps",
+            reported_period="2025Q3",
+            period_role=MetricPeriodRole.CONSENSUS,
+        ),
+        confidence=0.7,
+    )
+
+    with pytest.raises(WorkflowValidationError, match="mismatched locator"):
+        validator.validate_evidence_sources([emitted], {validator.source_signature(canonical)})
+
+
 def test_reviews_endpoint_delegates_to_workflow():
     fake_llm = FakeLLM()
 
@@ -533,10 +1029,23 @@ def test_reviews_endpoint_delegates_to_workflow():
     assert body["status"] == "completed"
     assert body["ticker"] == "NVDA"
     assert body["quality_gate_result"]["status"] == "passed"
-    assert body["quality_gate_result"]["source_manifest_entries"] == 5
+    assert body["quality_gate_result"]["source_manifest_entries"] == 18
     assert {source["source_id"] for source in body["claim_matrix"]["source_manifest"]} == {
-        "api:eps",
-        "api:free_cash_flow",
+        "financial_api:NVDA:2025Q3:yfinance:eps",
+        "financial_api:NVDA:2025Q3:sec:revenue",
+        "financial_api:NVDA:2025Q3:sec:operating_cash_flow",
+        "financial_api:NVDA:2025Q3:sec:capex",
+        "metric:NVDA:2025Q3:free_cash_flow:derived",
+        "financial_api:NVDA:2025Q3:yfinance:previous_quarter:eps",
+        "financial_api:NVDA:2025Q3:sec:previous_quarter:revenue",
+        "financial_api:NVDA:2025Q3:sec:previous_quarter:operating_cash_flow",
+        "financial_api:NVDA:2025Q3:sec:previous_quarter:capex",
+        "metric:NVDA:2025Q3:previous_quarter:free_cash_flow:derived",
+        "financial_api:NVDA:2025Q3:yfinance:year_ago_quarter:eps",
+        "financial_api:NVDA:2025Q3:sec:year_ago_quarter:revenue",
+        "financial_api:NVDA:2025Q3:sec:year_ago_quarter:operating_cash_flow",
+        "financial_api:NVDA:2025Q3:sec:year_ago_quarter:capex",
+        "metric:NVDA:2025Q3:year_ago_quarter:free_cash_flow:derived",
         "filing:eps",
         "filing:guidance",
         "filing:risk",
@@ -544,6 +1053,82 @@ def test_reviews_endpoint_delegates_to_workflow():
     assert body["decision_uses"] == body["claim_matrix"]["decision_uses"]
     assert body["judge_decision"]["verdict"] == "good"
     assert body["steps"][-1]["step"] == "markdown_renderer"
-    assert "# Earnings Review: NVDA 2025Q3" in body["markdown_report"]
-    assert "## Evidence Matrix" in body["markdown_report"]
-    assert "## Quality Gates" in body["markdown_report"]
+    assert "# 決算レビュー: NVDA 2025Q3" in body["markdown_report"]
+    assert "## 根拠マトリクス (Evidence Matrix)" in body["markdown_report"]
+    assert "## 品質ゲート (Quality Gates)" in body["markdown_report"]
+
+
+def test_reviews_endpoint_caps_confidence_from_missing_required_canonical_metric():
+    fake_llm = HighConfidenceJudgeLLM()
+
+    def override_workflow() -> ReviewWorkflow:
+        return ReviewWorkflow(llm=fake_llm)
+
+    payload = normalized_review_payload(dry_run=False)
+    payload["financial_metrics"].pop("revenue")
+    payload["financial_metrics"]["canonical_metrics"] = [
+        metric
+        for metric in payload["financial_metrics"]["canonical_metrics"]
+        if not (metric["metric_name"] == "revenue" and metric["period_role"] == "actual")
+    ]
+    payload["financial_metrics"]["availability"] = [
+        {
+            "key": "eps_consensus",
+            "status": "required_missing",
+            "reason": "yfinance consensus estimate was unavailable.",
+            "source_type": "financial_api",
+        },
+        {
+            "key": "presentation_guidance",
+            "status": "conflicting",
+            "reason": "Presentation guidance conflicted with canonical metrics.",
+            "source_type": "earnings_presentation",
+        },
+    ]
+
+    api.app.dependency_overrides[api.get_workflow] = override_workflow
+    try:
+        client = TestClient(api.app)
+        response = client.post("/reviews", json=payload)
+    finally:
+        api.app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["judge_decision"]["confidence"] == 0.8
+    assert body["claim_matrix"]["missing_data_items"] == []
+
+
+def test_reviews_endpoint_does_not_cap_optional_or_presentation_missing_data():
+    fake_llm = HighConfidenceJudgeLLM()
+
+    def override_workflow() -> ReviewWorkflow:
+        return ReviewWorkflow(llm=fake_llm)
+
+    payload = normalized_review_payload(dry_run=False)
+    payload["financial_metrics"]["availability"] = [
+        {
+            "key": "eps_consensus",
+            "status": "required_missing",
+            "reason": "Legacy provider-specific consensus estimate was unavailable.",
+            "source_type": "financial_api",
+        },
+        {
+            "key": "presentation_guidance",
+            "status": "conflicting",
+            "reason": "Presentation guidance conflicted with canonical metrics.",
+            "source_type": "earnings_presentation",
+        },
+    ]
+
+    api.app.dependency_overrides[api.get_workflow] = override_workflow
+    try:
+        client = TestClient(api.app)
+        response = client.post("/reviews", json=payload)
+    finally:
+        api.app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["judge_decision"]["confidence"] == 0.95
+    assert body["claim_matrix"]["missing_data_items"] == []

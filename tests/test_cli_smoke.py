@@ -33,14 +33,20 @@ def test_cli_fake_smoke_writes_report_and_workflow_result(monkeypatch, tmp_path)
 
     assert workflow_result["ticker"] == "NVDA"
     assert workflow_result["fiscal_period"] == "2025Q3"
+    assert workflow_result["status"] == "completed"
+    assert "claim_matrix" in workflow_result
+    assert "metric:NVDA:2025Q3:free_cash_flow:derived" in {
+        source["source_id"] for source in workflow_result["claim_matrix"]["source_manifest"]
+    }
     assert workflow_result["judge_decision"]["verdict"] in {"good", "neutral", "bad"}
     for expected in (
         "NVDA",
         "2025Q3",
-        "## Judge Rationale",
-        "## Evidence Matrix",
-        "## Quality Gates",
-        "## Disclaimer",
+        "## レポート前提: canonical data",
+        "## 判定理由",
+        "## 根拠マトリクス (Evidence Matrix)",
+        "## 品質ゲート (Quality Gates)",
+        "## 免責事項",
         "| Claim ID | Fact | Interpretation | Implication | Time scope |",
     ):
         assert expected in report
@@ -69,8 +75,36 @@ def test_cli_fake_smoke_accepts_document_files(monkeypatch, tmp_path):
     workflow_result = json.loads((out_dir / "workflow_result.json").read_text(encoding="utf-8"))
     assert workflow_result["ticker"] == "NVDA"
     assert workflow_result["judge_decision"]["verdict"] in {"good", "neutral", "bad"}
-    assert "## Evidence Matrix" in report
-    assert "## Source Appendix" in report
+    assert "## 根拠マトリクス (Evidence Matrix)" in report
+    assert "## ソース付録 (Source Appendix)" in report
+
+
+def test_cli_fake_smoke_accepts_current_local_presentation_sample(monkeypatch, tmp_path):
+    monkeypatch.setenv("LLM_PROVIDER", "fake")
+    monkeypatch.setattr("src.workflow._fetch_consensus", lambda *args, **kwargs: None)
+    monkeypatch.setattr("src.workflow._fetch_filing_html", lambda *args, **kwargs: "")
+
+    out_dir = tmp_path / "out"
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            "run",
+            "--input-json",
+            "samples/request.current.local-presentation.example.json",
+            "--out",
+            str(out_dir),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    report = (out_dir / "report.md").read_text(encoding="utf-8")
+    workflow_result = json.loads((out_dir / "workflow_result.json").read_text(encoding="utf-8"))
+    assert workflow_result["ticker"] == "NVDA"
+    assert workflow_result["judge_decision"]["verdict"] in {"good", "neutral", "bad"}
+    assert "## データ品質" in report
+    assert "## 根拠マトリクス (Evidence Matrix)" in report
+    assert "current-sample-presentation:section-1" in report
 
 
 def test_cli_api_mode_posts_normalized_payload_without_raw_acquisition(monkeypatch, tmp_path):
@@ -79,7 +113,7 @@ def test_cli_api_mode_posts_normalized_payload_without_raw_acquisition(monkeypat
 
     monkeypatch.setattr(
         "src.preprocessor.fetch_consensus",
-        lambda ticker, fiscal_period: build_financial_metrics(
+        lambda ticker, fiscal_period, **kwargs: build_financial_metrics(
             ticker=ticker,
             fiscal_period=fiscal_period,
             eps=0.81,
