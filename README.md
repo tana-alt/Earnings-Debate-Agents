@@ -1,4 +1,4 @@
-# Earnings Debate Agent
+# Earnings Debate Agents
 
 ## 提出課題との対応
 
