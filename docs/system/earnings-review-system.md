@@ -161,6 +161,84 @@ uv run earnings-debate serve --help
 | `--raw-text TEXT` | raw text を document section 化する |
 | `--out PATH` | `workflow_result.json` と `report.md` の出力先 |
 
+### 4.6 Choose An Input Mode
+
+入力は大きく分けて、正規化済み JSON、local file、raw text、SEC filing URL の4系統です。
+
+| Input mode | Recommended use | External acquisition |
+|---|---|---|
+| normalized sample JSON | 提出確認、CI、contract smoke | なし |
+| local PDF/text/Markdown | 手元の決算資料、transcript、memo を使う | `financial_metrics` がない場合は財務指標取得が走る |
+| raw text | 短い抜粋や手入力メモを使う | `financial_metrics` がない場合は財務指標取得が走る |
+| SEC filing URL | EDGAR filing HTML を取得して section 化する | SEC filing 取得。cache miss 時は network access |
+| API normalized payload | server process へ正規化済み request を送る | payload が正規化済みならなし |
+
+外部取得なしで CLI と workflow contract を確認する場合は、`samples/request.nvda-2027q1.example.json` または `samples/request.zs-2026q3.example.json` を使います。local file や raw text を ticker/fiscal period だけで実行する簡易形では、LLM provider を `fake` にしても、足りない `financial_metrics` を補うために yfinance や SEC Company Facts への取得が発生し得ます。
+
+### 4.7 Run With A Local PDF Or Text File
+
+PDF や text file は repository 内に置く必要はありません。`--local-path` には、CLI を実行する directory から見える既存ファイルの相対パス、または絶対パスを渡します。提出用 repository に個人用PDFや大きい入力ファイルを含めない場合は、repo外の directory を使ってください。
+
+例として、repo外に local only の入力置き場を作る場合:
+
+```bash
+mkdir -p /tmp/earnings-inputs
+cp /path/to/company-earnings-presentation.pdf /tmp/earnings-inputs/presentation.pdf
+```
+
+PDF を使って local workflow を実行する例:
+
+```bash
+PYTHON_DOTENV_DISABLED=1 \
+LLM_PROVIDER=fake \
+LOG_LEVEL=WARNING \
+uv run earnings-debate run \
+  --api-url local \
+  --ticker NVDA \
+  --fiscal-period 2027Q1 \
+  --local-path /tmp/earnings-inputs/presentation.pdf \
+  --out /tmp/earnings-nvda-local-pdf
+```
+
+複数ファイルを使う場合は `--local-path` を複数回指定します。
+
+```bash
+uv run earnings-debate run \
+  --api-url local \
+  --ticker NVDA \
+  --fiscal-period 2027Q1 \
+  --local-path /tmp/earnings-inputs/presentation.pdf \
+  --local-path /tmp/earnings-inputs/transcript.txt \
+  --out /tmp/earnings-nvda-local-files
+```
+
+対応する拡張子は `.pdf`、`.txt`、`.text`、`.md` です。text file は UTF-8 を前提にします。PDF は `pypdf` で抽出できる text layer が必要です。scan PDF の OCR は行いません。
+
+短い文章だけを渡す場合は `--raw-text` を使います。
+
+```bash
+uv run earnings-debate run \
+  --api-url local \
+  --ticker NVDA \
+  --fiscal-period 2027Q1 \
+  --raw-text "Management guided to sequential revenue growth and higher capex." \
+  --out /tmp/earnings-nvda-raw-text
+```
+
+SEC filing URL を使う場合は、SEC EDGAR request 用の user-agent を設定します。
+
+```bash
+SEC_USER_AGENT="Your Name your.email@example.com" \
+uv run earnings-debate run \
+  --api-url local \
+  --ticker NVDA \
+  --fiscal-period 2027Q1 \
+  --filing-url "https://www.sec.gov/Archives/edgar/data/1045810/..." \
+  --out /tmp/earnings-nvda-sec
+```
+
+API server の `POST /reviews` は raw acquisition fields を受け取りません。PDF、`local_path`、`raw_text`、`filing_url` を使う場合は CLI/preprocessor で正規化してから、正規化済み `NormalizedReviewRequest` を API に渡します。
+
 ## 5. Canonical Samples And Outputs
 
 現行仕様の sample request は2本です。どちらも外部取得なしで `NormalizedReviewRequest` として使えます。
@@ -230,9 +308,9 @@ API は raw acquisition fields を受け付けません。`filing_url`、`docume
 - `filing_url`
 - ticker / fiscal period
 
-文書入力は `DocumentSection` に変換され、各 section に `SourceRef` が付きます。local file は text layer を前提に section 化されます。SEC filing は HTML を取得し、topic section に分割します。
+文書入力は `DocumentSection` に変換され、各 section に `SourceRef` が付きます。local file は text layer を前提に section 化されます。相対パスは CLI 実行時の current working directory 基準です。SEC filing は `use_sec=true` の場合に HTML を取得し、topic section に分割します。local file や raw text と `filing_url` を同時に渡した場合も、`filing_url` は追加の document source として取得対象になります。
 
-財務指標は `FinancialMetrics` に正規化されます。対象は EPS、revenue、operating cash flow、capex、free cash flow、guidance などです。free cash flow のような派生値は Python 側で計算・登録し、LLM が raw 表から自由に計算する設計にはしていません。
+財務指標は `FinancialMetrics` に正規化されます。対象は EPS、revenue、operating cash flow、capex、free cash flow、guidance などです。入力 payload に `financial_metrics` がない場合、preprocessor は ticker と fiscal period から財務指標取得を試みます。free cash flow のような派生値は Python 側で計算・登録し、LLM が raw 表から自由に計算する設計にはしていません。
 
 ## 9. Context Routing
 
@@ -289,7 +367,7 @@ runtime agent は7つです。
 | Investment-advice language guard | 投資助言表現を warning/redaction 対象にする |
 | ReportMatrix validation | source、evidence、claim、decision use の参照整合性を確認する |
 
-`EARNINGS_DEBATE_REQUIRE_GUIDANCE` は workflow の guidance acquisition gate に使われます。`EARNINGS_DEBATE_REQUIRE_NUMERIC_GROUNDING` は numeric grounding validator の切り分け用設定です。通常はどちらも有効のまま扱います。
+`EARNINGS_DEBATE_REQUIRE_GUIDANCE` は workflow の guidance acquisition gate に使われます。guidance/outlook source がない場合は、明示的な no-guidance disclosure を入力側で表現する必要があります。`EARNINGS_DEBATE_REQUIRE_NUMERIC_GROUNDING` は numeric grounding validator の切り分け用設定です。workflow 本線では ungrounded evidence を warning/filtering の対象として扱い、ReportMatrix の参照整合性で最終出力を検証します。
 
 report の `Quality Gates: passed` は、ReportMatrix の参照整合性など workflow 内部の検証が通ったことを示します。投資リスクがないことや、外部データが完全であることを保証するものではありません。
 
@@ -407,7 +485,44 @@ jq '.dry_run = true' samples/request.nvda-2027q1.example.json \
       --data-binary @-
 ```
 
-## 15. Tests And CI
+## 15. Error Handling And Troubleshooting
+
+API は既知の失敗を JSON envelope で返します。通常の失敗は `status="failed"` と `errors`、dry-run の失敗は `status="dry_run"`、`dry_run_status="failed"`、`checks`、`errors` を含みます。error detail には `category`、`message`、任意の `field`、`retryable` が入ります。
+
+CLI の表示は API envelope と同一ではありません。`--api-url local` は API preflight/envelope を通らず local workflow を直接実行します。remote API に投げた場合、HTTP 422/500 は `requests` の HTTP error として扱われ、成功時だけ `workflow_result.json` と `report.md` が出力されます。
+
+| Failure | API behavior | CLI behavior | Typical fix |
+|---|---|---|---|
+| Request body is not a JSON object | 422 `input_contract` | remote API では HTTP error | JSON object を送る |
+| Normalized request validation error | 422 `input_contract`、`source_manifest`、または `context_budget` | `--input-json` の正規化中は usage error。remote API では HTTP error | field 名、型、必須 field を修正する |
+| Raw acquisition fields sent to API | 422 `input_contract` | CLI は成功時に raw field を正規化してから送る | `filing_url`、`document_files`、`local_path`、`raw_text` は CLI/preprocessor 側で使う |
+| No executable document sections | 422 `input_contract`。dry-run では failed check | local mode では workflow 側の例外、remote API では HTTP error | `document_sections`、local file、raw text、または filing URL を指定する |
+| Local document file cannot be read | API では raw `document_files` は基本的に拒否 | usage error | パス、拡張子、UTF-8、PDF text layer、空ファイルでないことを確認する |
+| Source manifest mismatch | 422 `source_manifest` | local mode では workflow 側の例外、remote API では HTTP error | `source_id`、locator、metric/source metadata を揃える |
+| Context budget exceeded | 422 `context_budget`。dry-run では failed check | local mode では workflow 側の例外、remote API では HTTP error | document section を短くする、不要 section を削る、budget を見直す |
+| Guidance source is missing | workflow quality failure。API category は発生箇所により `quality_gate` または generic 500 | local mode では workflow 側の例外、remote API では HTTP error | guidance/outlook section か no-guidance disclosure を入力に含める |
+| LLM output schema or role mismatch | 500 `llm_output_schema` または `agent_role`、`retryable` は category に従う | local mode では workflow 側の例外、remote API では HTTP error | provider response、prompt、agent output schema を確認する |
+| Provider configuration, authentication, or transient failure | 外部へは generic 500 として返る場合がある | local mode では provider exception、remote API では HTTP error | API key、model、rate limit、network、provider status を確認する |
+| Unexpected internal failure | 500 `internal_invariant` | local mode では未処理例外、remote API では HTTP error | server log と再現 payload を確認する |
+
+local file 関連でよくある原因:
+
+- `--local-path` の相対パスが CLI 実行 directory から見えていない
+- 対応外の拡張子を渡している
+- text file が UTF-8 ではない
+- PDF が scan 画像のみで、extractable text がない
+- 入力 document が空、または chunk 化後に section が残らない
+
+API error body を直接確認したい場合は、CLI 経由ではなく `curl` で `/reviews` に送って response JSON を保存してください。
+
+```bash
+curl -sS http://127.0.0.1:8000/reviews \
+  -H 'content-type: application/json' \
+  --data @samples/request.nvda-2027q1.example.json \
+  > /tmp/earnings-review-response.json
+```
+
+## 16. Tests And CI
 
 主な Makefile target:
 
@@ -441,7 +556,7 @@ uv run earnings-debate run \
   --out /tmp/earnings-cli-smoke
 ```
 
-## 16. Limitations
+## 17. Limitations
 
 - SEC filing segmentation は HTML text と heading pattern に依存します。
 - PDF は text layer 抽出が前提です。scan PDF の OCR は主要責務外です。
